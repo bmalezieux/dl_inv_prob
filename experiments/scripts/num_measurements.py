@@ -1,10 +1,11 @@
 import numpy as np
+import torch
 
 from tqdm import tqdm
 from dl_inv_prob.dl import DictionaryLearning
 from dl_inv_prob.utils import generate_dico, generate_data, recovery_score
 
-DEVICE = "cuda:1"
+DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
 N_EXP = 10
 RNG = np.random.default_rng(100)
 
@@ -26,7 +27,7 @@ for n_exp in tqdm(range(N_EXP)):
     for i, m in enumerate(m_values):
         for j, N_matrices in enumerate(N_mat_values):
 
-            A = RNG.random(size=(N_matrices, m, dim_signal))
+            A = RNG.normal(size=(N_matrices, m, dim_signal))
             A /= np.linalg.norm(A, axis=1, keepdims=True)
 
             Y, _ = generate_data(A @ D, N_data_total // N_matrices, rng=RNG)

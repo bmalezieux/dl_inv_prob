@@ -4,6 +4,9 @@
 *.npy
 *.pickle
 
+# Data
+!experiments/data/flowers.png
+
 # VS code
 .vscode
 

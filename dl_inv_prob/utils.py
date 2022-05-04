@@ -50,8 +50,8 @@ def generate_data(D, N, s=0.1, rng=None):
     n_components = D.shape[2]
     n_dicos = D.shape[0]
     if rng is None:
-        X = (rng.random((n_dicos, n_components, N)) > (1-s)).astype(float)
-        X *= rng.normal(scale=1, size=(n_dicos, n_components, N))
+        X = (np.random.random((n_dicos, n_components, N)) > (1-s)).astype(float)
+        X *= np.random.normal(scale=1, size=(n_dicos, n_components, N))
     else:
         X = (rng.random((n_dicos, n_components, N)) > (1-s)).astype(float)
         X *= rng.normal(scale=1, size=(n_dicos, n_components, N))
@@ -62,7 +62,7 @@ def recovery_score(D, Dref):
     """
     Comparison between two dictionaries
     """
-    cost_matrix = np.abs(Dref.T@D)
+    cost_matrix = np.abs(Dref.T @ D)
 
     row_ind, col_ind = linear_sum_assignment(cost_matrix, maximize=True)
     score = cost_matrix[row_ind, col_ind].sum() / D.shape[1]

@@ -51,13 +51,13 @@ class DictionaryLearning(nn.Module):
         Initialization for the dictionary
     lipschitz : float
         Lipschitz constant of the current dictionary
-    operator : torch.Tensor, shape (dim_y, dim_signal)
-        Measurement matrix
-    dictionary : torch.Tensor, shape (dim_signal, dim_x)
+    operator : torch.Tensor, shape (n_matrices, dim_y, dim_signal)
+        Measurement matrices
+    D : torch.Tensor, shape (dim_signal, dim_x)
         Current dictionary
     steps : torch.Tensor, shape (n_iter)
         steps sizes for the sparse coding algorithm
-    Y_tensor : torch.Tensor, shape (dim_y, number of data)
+    Y_tensor : torch.Tensor, shape (n_matrices, dim_y, number of data)
         data
     """
     def __init__(self, n_components, lambd=0.1, max_iter=100,
@@ -95,6 +95,11 @@ class DictionaryLearning(nn.Module):
         # Parameters for experiments
         self.keep_dico = keep_dico
         self.rng = rng
+
+        # Tensors
+        self.D = None
+        self.Y_tensor = None
+        self.operator = None
 
     @property
     def D_(self):
@@ -275,8 +280,8 @@ class DictionaryLearning(nn.Module):
                     end = True
 
         # Avoiding numerical instabitility in the step size
-        # future_step = min(10*t, 1e4)
-        future_step = t
+        future_step = min(10*t, 1e4)
+        # future_step = t
         return future_step, end
 
     def training_process(self, backprop=True):
@@ -355,18 +360,16 @@ class DictionaryLearning(nn.Module):
         # Dimension
         self.dim_y = Y.shape[1]
 
-        if A is None:
-            self.dim_signal = self.dim_y
-        else:
-            self.dim_signal = A.shape[2]
-
         # Operator
         if A is None:
+            self.dim_signal = self.dim_y
             self.operator = torch.eye(
                 self.dim_y, device=self.device, dtype=torch.float
             )[None, :]
         else:
+            self.dim_signal = A.shape[2]
             self.operator = torch.from_numpy(A).float().to(self.device)
+
         self.n_matrices = self.operator.shape[0]
 
         # Dictionary

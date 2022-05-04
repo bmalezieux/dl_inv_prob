@@ -61,8 +61,8 @@ class DictionaryLearning(nn.Module):
         data
     """
     def __init__(self, n_components, lambd=0.1, max_iter=100,
-                 init_D=None, device=None, step=1., algo="fista",
-                 keep_dico=False, rng=None, tol=1e-6):
+                 init_D=None, step=1., algo="fista",
+                 keep_dico=False, tol=1e-6, rng=None, device=None):
         super().__init__()
 
         if device is None:
@@ -103,8 +103,9 @@ class DictionaryLearning(nn.Module):
 
     @property
     def D_(self):
-        """ Returns the current dictionary """
-        return self.D.to("cpu").detach().numpy()
+        """ Returns the current dictionary 
+        np.array (dim_signal, n_components)"""
+        return self.D.detach().to("cpu").numpy()
 
     def rescale(self, atoms="columns"):
         """
@@ -317,6 +318,10 @@ class DictionaryLearning(nn.Module):
 
             # Computing gradients
             loss.backward()
+            
+            # Gradient correction
+            with torch.no_grad():
+                self.D.grad.data = torch.matmul(self.cov_inv, self.D.grad.data)
 
             # Line search
             step, end = self.line_search(step, loss)
@@ -339,7 +344,7 @@ class DictionaryLearning(nn.Module):
 
         return loss.item()
 
-    def fit(self, Y, A=None):
+    def fit(self, Y, A=None, cov_inv=None):
         """
         Training procedure
 
@@ -351,6 +356,8 @@ class DictionaryLearning(nn.Module):
             Measurement matrices.
             If set to None, A is considered to be the identity.
             Default : None.
+        cov_inv : np.array, shape (dim_signal, dim_signal)
+            Inverse of covariance A.T @ A
 
         Returns
         -------
@@ -372,18 +379,22 @@ class DictionaryLearning(nn.Module):
 
         self.n_matrices = self.operator.shape[0]
 
+        # Covariance
+        if cov_inv is None:
+            self.cov_inv = torch.eye(
+                self.dim_signal, device=self.device, dtype=torch.float
+            )
+        else:
+            self.cov_inv = torch.from_numpy(cov_inv).float().to(self.device)
+
         # Dictionary
         if self.init_D is None:
             if self.rng is None:
-                choice = np.random.choice(Y.shape[2], self.n_components)
-                dico = np.random.normal(
-                    size=(self.dim_signal, self.n_components)
-                )
-            else:
-                choice = self.rng.choice(Y.shape[2], self.n_components)
-                dico = self.rng.normal(
-                    size=(self.dim_signal, self.n_components)
-                )
+                self.rng = np.random.get_default_rng()
+            choice = self.rng.choice(Y.shape[2], self.n_components)
+            dico = self.rng.normal(
+                size=(self.dim_signal, self.n_components)
+            )
             if A is None:
                 dico = Y[0, :, choice]
             self.D = nn.Parameter(

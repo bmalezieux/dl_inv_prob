@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 from scipy.stats import ortho_group
 from tqdm import tqdm
@@ -28,7 +29,7 @@ def compute_corr(Y, N_matrices, D_hat, cov, reg_list, lambd, rng):
             cov,
             size=(N_matrices, m)
         )
-        A /= np.sqrt(np.sum(A**2, axis=1, keepdims=True))
+        A /= np.linalg.norm(A, axis=1, keepdims=True)
 
         # Gradients
         gradients = []
@@ -85,7 +86,6 @@ dim_patch = 10
 dim_signal = dim_patch ** 2
 n_components = dim_signal
 m = int(0.7 * dim_signal)
-N_data = 10000
 
 # Image
 im = Image.open(PATH_DATA)
@@ -95,7 +95,10 @@ im_to_process = np.array(im_gray_resized) / 255.
 
 # Patches
 patches = extract_patches_2d(im_to_process, (dim_patch, dim_patch))
-patches = patches.reshape(patches.shape[0], -1)[:N_data].T
+patches = patches.reshape(patches.shape[0], -1)
+RNG.shuffle(patches)
+patches = patches.T
+N_data = patches.shape[1]
 
 # Parameters experiment
 sigma_diag = np.linspace(0, 0.5, 20)
@@ -112,19 +115,16 @@ for sigma in tqdm(sigma_diag):
     cov = W.T @ np.diag(u) @ W
 
     A = RNG.multivariate_normal(np.zeros(dim_signal), cov, size=(10000, m))
-    A /= np.sqrt(np.sum(A**2, axis=1, keepdims=True))
+    A /= np.linalg.norm(A, axis=1, keepdims=True)
 
-    true_cov = np.zeros((dim_signal, dim_signal))
-    for i in range(10000):
-        true_cov += A[i].T @ A[i]
-    true_cov /= 10000
+    empirical_cov = (A.transpose((0, 2, 1)) @ A).mean(axis=0)
 
     results = Parallel(n_jobs=10)(
         delayed(compute_corr)(
             patches.copy(),
             N_matrices,
             D_hat.copy(),
-            true_cov.copy(),
+            empirical_cov.copy(),
             reg_list,
             lambd,
             RNG
@@ -133,9 +133,12 @@ for sigma in tqdm(sigma_diag):
     results = np.array(results)
     result_list.append(results)
 
-
 results_final = np.array(result_list)
 
-np.save("../results/gradient_scaling_correlation.npy", results_final)
-np.save("../results/gradient_scaling_correlation_sigma.npy", sigma_diag)
-np.save("../results/gradient_scaling_correlation_reg_list.npy", reg_list)
+results_df = {
+    "results": {"results": results_final},
+    "sigma_diag": {"sigma_diag": sigma_diag},
+    "reg_list": {"reg_list": reg_list}
+}
+results_df = pd.DataFrame(results_df)
+results_df.to_pickle("../results/gradient_scaling_correlation.pickle")

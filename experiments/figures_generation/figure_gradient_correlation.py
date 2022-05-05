@@ -1,13 +1,17 @@
+# %%
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 
 plt.style.use('figures_style_small.mplstyle')
 
+results = pd.read_pickle("../results/gradient_scaling_correlation.pickle")
 
-results_final = np.load("../results/gradient_scaling_correlation.npy")
-sigma_diag = np.load("../results/gradient_scaling_correlation_sigma.npy")
-reg_list = np.load("../results/gradient_scaling_correlation_reg_list.npy")
+
+results_final = results["results"]["results"]
+sigma_diag = results["sigma_diag"]["sigma_diag"]
+reg_list = results["reg_list"]["reg_list"]
 
 
 plt.plot(sigma_diag, results_final[:, :, 0].mean(axis=1), label="Unscaled")

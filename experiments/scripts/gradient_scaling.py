@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import pandas as pd
 
 from scipy import interpolate
 from scipy.stats import ortho_group
@@ -46,7 +47,9 @@ im_to_process = np.array(im_gray_resized) / 255.
 
 # Patches
 patches = extract_patches_2d(im_to_process, (dim_patch, dim_patch))
-patches = patches.reshape(patches.shape[0], -1)[:N_data].T
+patches = patches.reshape(patches.shape[0], -1)
+RNG.shuffle(patches)
+patches = patches.T
 
 # Parameters experiment
 sigma_diag = 0.3
@@ -62,38 +65,25 @@ u = np.maximum(RNG.normal(1, sigma_diag, size=dim_signal), 0.1)
 cov = W.T @ np.diag(u) @ W
 
 A = RNG.multivariate_normal(np.zeros(dim_signal), cov, size=(10000, m))
-A /= np.sqrt(np.sum(A**2, axis=1, keepdims=True))
-
-true_cov = np.zeros((dim_signal, dim_signal))
-for i in range(10000):
-    true_cov += A[i].T @ A[i]
-true_cov /= 10000
+A /= np.linalg.norm(A, axis=1, keepdims=True)
+empirical_cov = (A.transpose((0, 2, 1)) @ A).mean(axis=0)
 
 dl = DictionaryLearning(n_components, init_D=D_init,
                         rng=RNG, device=DEVICE)
 dl.fit(patches[None, :])
 D_true = dl.D_
 
-
-times_results = []
-loss_results = []
-scores_results = []
-
-# Unscaled
-times_results.append([])
-loss_results.append([])
-scores_results.append([])
-
-# Scaled
-times_results.append([])
-loss_results.append([])
-scores_results.append([])
+results = {
+    "times": {"unscaled": [], "scaled": []},
+    "loss": {"unscaled": [], "scaled": []},
+    "scores": {"unscaled": [], "scaled": []}
+}
 
 # Reg
-for _ in range(len(reg_list)):
-    times_results.append([])
-    loss_results.append([])
-    scores_results.append([])
+for i in range(len(reg_list)):
+    results["times"][f"reg {reg_list[i]}"] = []
+    results["loss"][f"reg {reg_list[i]}"] = []
+    results["scores"][f"reg {reg_list[i]}"] = []
 
 
 for i in tqdm(range(N_EXP)):
@@ -103,7 +93,7 @@ for i in tqdm(range(N_EXP)):
         cov,
         size=(N_matrices, m)
     )
-    A /= np.sqrt(np.sum(A**2, axis=1, keepdims=True))
+    A /= np.linalg.norm(A, axis=1, keepdims=True)
     Y = []
     n_patches = patches.shape[1] // N_matrices
     for i in range(N_matrices):
@@ -111,45 +101,31 @@ for i in tqdm(range(N_EXP)):
             (A[i] @ patches[:, i * n_patches: (i+1) * n_patches])[None, :]
         )
     Y = np.concatenate(Y, axis=0)
-    print(Y.shape)
 
     times, loss, scores = compute_results(Y, A, None, n_components,
                                           D_init, D_true, RNG, DEVICE)
-    times_results[0].append(times.copy())
-    loss_results[0].append(loss.copy())
-    scores_results[0].append(scores.copy())
+    results["times"]["unscaled"].append(times.copy())
+    results["loss"]["unscaled"].append(loss.copy())
+    results["scores"]["unscaled"].append(scores.copy())
 
-    times, loss, scores = compute_results(Y, A, np.linalg.inv(true_cov),
+    times, loss, scores = compute_results(Y, A, np.linalg.inv(empirical_cov),
                                           n_components, D_init, D_true,
                                           RNG, DEVICE)
-    times_results[1].append(times.copy())
-    loss_results[1].append(loss.copy())
-    scores_results[1].append(scores.copy())
+    results["times"]["scaled"].append(times.copy())
+    results["loss"]["scaled"].append(loss.copy())
+    results["scores"]["scaled"].append(scores.copy())
 
     for j in range(len(reg_list)):
         cov_inv = np.linalg.inv(
-            true_cov + reg_list[j] * np.eye(true_cov.shape[0])
+            empirical_cov + reg_list[j] * np.eye(empirical_cov.shape[0])
         )
         times, loss, scores = compute_results(Y, A, cov_inv, n_components,
                                               D_init, D_true,
                                               RNG, DEVICE)
-        times_results[j+2].append(times.copy())
-        loss_results[j+2].append(loss.copy())
-        scores_results[j+2].append(scores.copy())
+        results["times"][f"reg {reg_list[j]}"].append(times.copy())
+        results["loss"][f"reg {reg_list[j]}"].append(loss.copy())
+        results["scores"][f"reg {reg_list[j]}"].append(scores.copy())
 
-new_times = np.linspace(0, 30, 100)
-recoveries = []
-for i in range(len(times_results)):
-    recoveries.append(np.zeros((len(times_results[i]), len(new_times))))
-
-t_max = np.max(new_times)
-for i in range(len(times_results)):
-    for j in range(len(times_results[i])):
-        if times_results[i][j][-1] < t_max:
-            times_results[i][j][-1] = t_max
-        f = interpolate.interp1d(times_results[i][j], scores_results[i][j])
-        recoveries[i][j] = f(new_times)
-
-np.save("../results/scaling_gradient_times.npy", np.array(new_times))
-np.save("../results/scaling_gradient_recoveries.npy", np.array(recoveries))
-np.save("../results/scaling_gradient_reg_list.npy", np.array(reg_list))
+results["reg_list"] = {"reg_list": reg_list}
+results_df = pd.DataFrame(results)
+results_df.to_pickle("../results/gradient_scaling.pickle")

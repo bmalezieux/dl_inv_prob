@@ -1,6 +1,6 @@
 import numpy as np
-
 from scipy.optimize import linear_sum_assignment
+from sklearn.feature_extraction.image import extract_patches_2d
 
 
 def generate_dico(n_components, dim_signal, rng=None):
@@ -122,7 +122,7 @@ def combine_patches(patches):
 
 
 def psnr(rec, ref):
-    """Compute the peak signal-to-noise ratio for images on 8 bits.
+    """Compute the peak signal-to-noise ratio for grey images in [0, 1].
 
     Parameters
     ----------
@@ -137,6 +137,36 @@ def psnr(rec, ref):
         psnr of the reconstructed image
     """
     mse = np.square(rec - ref).mean()
-    psnr = 10 * np.log10(255 ** 2 / mse)
+    psnr = 10 * np.log10(1 / mse)
     
     return psnr
+
+def init_dictionary_img(img, dim_patch, n_atoms, rng=None):
+    """Compute a dictionary containing random flattened patches of the image.
+
+    Parameters
+    ----------
+    img : numpy.array, shape (height, width)
+        Input image
+    dim_patch : int
+        Dimension of patches to extract
+    n_atoms : int
+        Number of atoms in the dictionary
+    rng : np.random.Generator (default None)
+        Randomness generator
+    
+    Returns
+    -------
+    dict : numpy.array, shape (dim_patch ** 2, n_atoms)
+        Dictionary
+    """
+    patches = extract_patches_2d(img, (dim_patch, dim_patch),
+                                 max_patches=n_atoms)
+    patches = patches.reshape(patches.shape[0], -1)
+    if rng == None:
+        np.random.shuffle(patches)
+    else:
+        rng.shuffle(patches)
+    patches = patches.T
+    
+    return patches

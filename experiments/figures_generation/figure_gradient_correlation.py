@@ -1,4 +1,3 @@
-# %%
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -42,5 +41,5 @@ for i in range(len(reg_list)):
 
 plt.xlabel("Variance diag cov")
 plt.ylabel("Correlation with true gradient")
-plt.legend()
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
 plt.savefig("../figures/gradient_scaling_correlation.pdf")

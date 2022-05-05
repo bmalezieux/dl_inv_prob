@@ -2,7 +2,6 @@ import numpy as np
 import torch
 import pandas as pd
 
-from scipy import interpolate
 from scipy.stats import ortho_group
 from tqdm import tqdm
 from dl_inv_prob.dl import DictionaryLearning
@@ -64,10 +63,9 @@ W = ortho_group.rvs(dim_signal)
 u = np.maximum(RNG.normal(1, sigma_diag, size=dim_signal), 0.1)
 cov = W.T @ np.diag(u) @ W
 
-# A = RNG.multivariate_normal(np.zeros(dim_signal), cov, size=(10000, m))
-# A /= np.linalg.norm(A, axis=1, keepdims=True)
-# empirical_cov = (A.transpose((0, 2, 1)) @ A).mean(axis=0)
-empirical_cov = np.eye(dim_signal)
+A = RNG.multivariate_normal(np.zeros(dim_signal), cov, size=(10000, m))
+A /= np.linalg.norm(A, axis=1, keepdims=True)
+empirical_cov = (A.transpose((0, 2, 1)) @ A).mean(axis=0)
 
 dl = DictionaryLearning(n_components, init_D=D_init,
                         rng=RNG, device=DEVICE)
@@ -89,13 +87,12 @@ for i in range(len(reg_list)):
 
 for i in tqdm(range(N_EXP)):
 
-    # A = RNG.multivariate_normal(
-    #     np.zeros(dim_signal),
-    #     cov,
-    #     size=(N_matrices, m)
-    # )
-    # A /= np.linalg.norm(A, axis=1, keepdims=True)
-    A = np.concatenate([np.eye(dim_signal)[None, :] for i in range(N_matrices)], axis=0)
+    A = RNG.multivariate_normal(
+        np.zeros(dim_signal),
+        cov,
+        size=(N_matrices, m)
+    )
+    A /= np.linalg.norm(A, axis=1, keepdims=True)
     Y = []
     n_patches = patches.shape[1] // N_matrices
     for i in range(N_matrices):

@@ -1,7 +1,8 @@
 from mimetypes import init
 from dl_inv_prob.dl import DictionaryLearning
 from dl_inv_prob.utils import (extract_patches, combine_patches,
-                               init_dictionary_img, psnr, recovery_score)
+                               generate_dico, init_dictionary_img,
+                               psnr, recovery_score)
 import numpy as np
 import pandas as pd
 from PIL import Image
@@ -19,7 +20,7 @@ patch_len = dim_patch ** 2
 n_patches = (dim_image // dim_patch) ** 2
 
 n_atoms = 100
-nb_s = 3
+nb_s = 10
 s_values = np.linspace(0, 1, nb_s)
 
 # Image preprocessing
@@ -28,8 +29,10 @@ img = np.array(img.resize((200, 200), Image.ANTIALIAS).convert('L')) / 255
 patches = extract_patches(img, dim_patch)
 y = patches.reshape((n_patches, patch_len, 1))
 
+D_init = generate_dico(n_atoms, patch_len, rng=RNG)
+
 # Dictionary learning without inpainting
-D_init = init_dictionary_img(img, dim_patch, n_atoms, RNG)
+# D_init = init_dictionary_img(img, dim_patch, n_atoms, RNG)
 dl = DictionaryLearning(
     n_atoms,
     init_D=D_init,
@@ -46,16 +49,16 @@ for n_exp in tqdm(range(N_EXP)):
 
     for i, s in tqdm(enumerate(s_values)):
 
-        masks = RNG.binomial(1, s, size=(n_patches, patch_len))
+        masks = RNG.binomial(1, 1 - s, size=(n_patches, patch_len))
         A = np.concatenate([np.diag(mask)[None, :] for mask in masks])
         y_inpainting = A @ y
 
-        img_inpainting = combine_patches(y_inpainting.squeeze())
-        D_init_inpainting = init_dictionary_img(img_inpainting, dim_patch,
-                                                n_atoms, RNG)
+        # img_inpainting = combine_patches(y_inpainting.squeeze())
+        # D_init_inpainting = init_dictionary_img(img_inpainting, dim_patch,
+                                                # n_atoms, RNG)
         dl_inpainting = DictionaryLearning(
             n_atoms,
-            init_D=D_init_inpainting,
+            init_D=D_init,
             device=DEVICE,
             rng=RNG
         )

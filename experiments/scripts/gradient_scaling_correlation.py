@@ -131,7 +131,7 @@ for sigma in tqdm(sigma_diag):
         ) for _ in range(N_EXP)
     )
     results = np.array(results)
-    result_list.append(results)
+    result_list.append(results.copy())
 
 results_final = np.array(result_list)
 

@@ -10,18 +10,10 @@ from sklearn.feature_extraction.image import extract_patches_2d
 from PIL import Image
 
 
-def compute_corr(Y, N_matrices, D_hat, cov, reg_list, lambd, rng):
+def compute_corr(Y, true_gradient, m, N_matrices, D_hat, cov, reg_list, lambd, rng):
     with threadpool_limits(limits=1, user_api="blas"):
         # Parameters
-        m = Y.shape[0]
         dim_signal = D_hat.shape[0]
-
-        # True gradient
-        lasso = Lasso(alpha=lambd / Y.shape[0], fit_intercept=False)
-        lasso.fit(D_hat, Y)
-        z_hat = lasso.coef_.T
-        true_gradient = (D_hat @ z_hat - Y) @ z_hat.T
-        true_gradient /= np.linalg.norm(true_gradient)
 
         # List of operators
         A = rng.multivariate_normal(
@@ -108,6 +100,13 @@ reg_list = np.arange(0.1, 0.5, 0.1)
 D_hat = patches[:, :n_components]
 result_list = []
 
+# True gradient
+lasso = Lasso(alpha=lambd / patches.shape[0], fit_intercept=False)
+lasso.fit(D_hat, patches)
+z_hat = lasso.coef_.T
+true_gradient = (D_hat @ z_hat - patches) @ z_hat.T
+true_gradient /= np.linalg.norm(true_gradient)
+
 for sigma in tqdm(sigma_diag):
 
     W = ortho_group.rvs(dim_signal)
@@ -122,6 +121,8 @@ for sigma in tqdm(sigma_diag):
     results = Parallel(n_jobs=10)(
         delayed(compute_corr)(
             patches.copy(),
+            true_gradient.copy(),
+            m,
             N_matrices,
             D_hat.copy(),
             empirical_cov.copy(),

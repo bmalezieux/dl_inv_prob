@@ -103,7 +103,7 @@ class DictionaryLearning(nn.Module):
 
     @property
     def D_(self):
-        """ Returns the current dictionary 
+        """ Returns the current dictionary
         np.array (dim_signal, n_components)"""
         return self.D.detach().to("cpu").numpy()
 
@@ -318,7 +318,7 @@ class DictionaryLearning(nn.Module):
 
             # Computing gradients
             loss.backward()
-            
+
             # Gradient correction
             with torch.no_grad():
                 self.D.grad.data = torch.matmul(self.cov_inv, self.D.grad.data)
@@ -432,5 +432,148 @@ class DictionaryLearning(nn.Module):
             y = torch.tensor(y, device=self.device, dtype=torch.float)
             x = self.forward(y)
             rec = torch.matmul(self.D, x)
-        
+
         return rec.detach().to("cpu").numpy()
+
+
+class Inpainting(DictionaryLearning):
+
+    def __init__(self, n_components, lambd=0.1, max_iter=100,
+                 init_D=None, step=1., algo="fista",
+                 keep_dico=False, tol=1e-6, rng=None, device=None):
+        super().__init__(n_components, lambd, max_iter, init_D, step,
+                         algo, keep_dico, tol, rng, device)
+
+        self.mask = None
+
+    def compute_lipschitz(self):
+        """ Computes an upper bound of the
+        Lipschitz constant of the dictionary for each matrix"""
+        with torch.no_grad():
+            product = self.mask[:, :, None] * self.D
+            self.lipschitz = torch.norm(
+                torch.matmul(product.transpose(1, 2), product),
+                dim=(1, 2)
+            ).max().item()
+            if self.lipschitz == 0:
+                self.lipschitz = 1.
+
+    def cost(self, y, x):
+        """ Cost function """
+        product = self.mask[:, :, None] * self.D
+
+        res = torch.matmul(product, x) - y
+        l2 = (res * res).sum()
+        l1 = torch.abs(x).sum()
+
+        return 0.5 * l2 + self.lambd * l1
+
+    def forward(self, y):
+        """
+        (F)ISTA-like forward pass
+
+        Parameters
+        ----------
+        y : torch.Tensor, shape (n_matrices, dim_y, number of data)
+            Data to be processed by (F)ISTA
+
+        Returns
+        -------
+        out : torch.Tensor, shape (n_matrices, dim_x, number of data)
+            Approximation of the sparse code associated to y
+        """
+        out = torch.zeros(
+            (self.n_matrices, self.dim_x, y.shape[2]),
+            dtype=torch.float,
+            device=self.device
+        )
+
+        # For FISTA
+        t = 1.
+        iterate = out.clone()
+
+        # Computing step and product
+        step = 1. / self.lipschitz
+        product = self.mask[:, :, None] * self.D
+
+        for i in range(self.max_iter):
+            # Keep last iterate for FISTA
+            iterate_old = iterate.clone()
+
+            # Gradient descent
+            gradient = torch.matmul(
+                product.transpose(1, 2), torch.matmul(product, out) - y
+            )
+            out = out - step * gradient
+
+            # Thresholding
+            thresh = torch.abs(out) - step * self.lambd
+            out = torch.sign(out) * F.relu(thresh)
+
+            iterate = out.clone()
+            # Apply momentum for FISTA
+            if self.algo == "fista":
+                t_new = 0.5 * (1 + np.sqrt(1 + 4 * t * t))
+                out = iterate + ((t - 1.) / t_new) * (iterate - iterate_old)
+                t = t_new
+
+        return out
+
+    def fit(self, Y, mask, cov_inv=None):
+        """
+        Training procedure
+
+        Parameters
+        ----------
+        Y : np.array, shape (n_matrices, dim_y, data_size)
+            Observations to be processed.
+        mask : np.array, shape (n_matrices, dim_y)
+            Diagonal masks.
+        cov_inv : np.array, shape (dim_signal, dim_signal)
+            Inverse of covariance A.T @ A
+
+        Returns
+        -------
+        loss : float
+            Final value of the loss after training.
+        """
+        # Dimension
+        self.dim_y = Y.shape[1]
+        self.dim_signal = Y.shape[1]
+
+        # Mask
+        self.mask = torch.from_numpy(mask).float().to(self.device)
+        self.n_matrices = self.mask.shape[0]
+
+        # Covariance
+        if cov_inv is None:
+            self.cov_inv = torch.eye(
+                self.dim_signal, device=self.device, dtype=torch.float
+            )
+        else:
+            self.cov_inv = torch.from_numpy(cov_inv).float().to(self.device)
+
+        # Dictionary
+        if self.init_D is None:
+            if self.rng is None:
+                self.rng = np.random.get_default_rng()
+            dico = self.rng.normal(
+                size=(self.dim_signal, self.n_components)
+            )
+            self.D = nn.Parameter(
+                torch.tensor(dico, device=self.device, dtype=torch.float)
+            )
+        else:
+            dico_tensor = torch.from_numpy(self.init_D).float().to(self.device)
+            self.D = nn.Parameter(dico_tensor)
+
+        # Scaling and computing lipschitz
+        self.rescale()
+        self.compute_lipschitz()
+
+        # Data
+        self.Y_tensor = torch.from_numpy(Y).float().to(self.device)
+
+        # Training
+        loss = self.training_process()
+        return loss

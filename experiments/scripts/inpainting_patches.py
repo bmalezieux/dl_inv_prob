@@ -1,7 +1,7 @@
-from mimetypes import init
-from dl_inv_prob.dl import DictionaryLearning
+from dl_inv_prob.dl import DictionaryLearning, Inpainting
 from dl_inv_prob.utils import (extract_patches, combine_patches,
-                               generate_dico, init_dictionary_img,
+                               generate_dico,
+                               # init_dictionary_img,
                                psnr, recovery_score)
 import numpy as np
 import pandas as pd
@@ -20,26 +20,25 @@ patch_len = dim_patch ** 2
 n_patches = (dim_image // dim_patch) ** 2
 
 n_atoms = 100
-nb_s = 5
+nb_s = 10
 s_values = np.linspace(0, 1, nb_s)
 
 # Image preprocessing
 img = Image.open(DATA_PATH)
 img = np.array(img.resize((200, 200), Image.ANTIALIAS).convert('L')) / 255
 patches = extract_patches(img, dim_patch)
-y = patches.reshape((n_patches, patch_len, 1))
+y = patches.reshape((n_patches, patch_len))
 
 D_init = generate_dico(n_atoms, patch_len, rng=RNG)
 
 # Dictionary learning without inpainting
-# D_init = init_dictionary_img(img, dim_patch, n_atoms, RNG)
 dl = DictionaryLearning(
     n_atoms,
     init_D=D_init,
     device=DEVICE,
     rng=RNG
 )
-dl.fit(y)
+dl.fit(y[:, :, None])
 D_no_inpainting = dl.D_
 
 scores = np.zeros((N_EXP, nb_s))
@@ -49,28 +48,24 @@ rec_images = np.zeros((N_EXP, nb_s, dim_image, dim_image))
 for n_exp in tqdm(range(N_EXP)):
 
     for i, s in tqdm(enumerate(s_values)):
-
+        # Dictionary learning with inpainting
         masks = RNG.binomial(1, 1 - s, size=(n_patches, patch_len))
-        A = np.concatenate([np.diag(mask)[None, :] for mask in masks])
-        y_inpainting = A @ y
+        y_inpainting = masks * y
 
-        # img_inpainting = combine_patches(y_inpainting.squeeze())
-        # D_init_inpainting = init_dictionary_img(img_inpainting, dim_patch,
-                                                # n_atoms, RNG)
-        dl_inpainting = DictionaryLearning(
+        dl_inpainting = Inpainting(
             n_atoms,
             init_D=D_init,
             device=DEVICE,
             rng=RNG
         )
-        dl_inpainting.fit(y_inpainting, A)
+        dl_inpainting.fit(y_inpainting[:, :, None], masks)
         D_inpainting = dl_inpainting.D_
-        
+
         scores[n_exp, i] = recovery_score(D_inpainting, D_no_inpainting)
-        
-        rec_patches = dl_inpainting.rec(y_inpainting).reshape((n_patches, 
-                                                   dim_patch, 
-                                                   dim_patch))
+
+        # Compute reconstructed image
+        rec_patches = dl_inpainting.rec(y_inpainting[:, :, None])
+        rec_patches = rec_patches.reshape((n_patches, dim_patch, dim_patch))
         rec_inpainting = combine_patches(rec_patches)
         rec_inpainting = np.clip(rec_inpainting, 0, 1)
 

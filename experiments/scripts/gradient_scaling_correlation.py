@@ -10,8 +10,10 @@ from sklearn.feature_extraction.image import extract_patches_2d
 from PIL import Image
 
 
-def compute_corr(Y, true_gradient, m, N_matrices, D_hat, cov, reg_list, lambd, rng):
+def compute_corr(Y, true_gradient, m, N_matrices, D_hat,
+                 cov, reg_list, lambd, seed):
     with threadpool_limits(limits=1, user_api="blas"):
+        rng = np.random.default_rng(seed)
         # Parameters
         dim_signal = D_hat.shape[0]
 
@@ -107,6 +109,8 @@ z_hat = lasso.coef_.T
 true_gradient = (D_hat @ z_hat - patches) @ z_hat.T
 true_gradient /= np.linalg.norm(true_gradient)
 
+seed_vector = RNG.permutation(np.arange(0, 100, 1, dtype=int))[:N_EXP]
+
 for sigma in tqdm(sigma_diag):
 
     W = ortho_group.rvs(dim_signal)
@@ -128,8 +132,8 @@ for sigma in tqdm(sigma_diag):
             empirical_cov.copy(),
             reg_list,
             lambd,
-            RNG
-        ) for _ in range(N_EXP)
+            seed
+        ) for seed in seed_vector
     )
     results = np.array(results)
     result_list.append(results.copy())

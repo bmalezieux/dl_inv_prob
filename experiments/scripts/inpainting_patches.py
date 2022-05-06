@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 DATA_PATH = '../data/flowers.png'
 DEVICE = "cuda:1"
-N_EXP = 10
+N_EXP = 1
 RNG = np.random.default_rng(100)
 
 dim_image = 200
@@ -20,7 +20,7 @@ patch_len = dim_patch ** 2
 n_patches = (dim_image // dim_patch) ** 2
 
 n_atoms = 100
-nb_s = 50
+nb_s = 5
 s_values = np.linspace(0, 1, nb_s)
 
 # Image preprocessing
@@ -44,6 +44,7 @@ D_no_inpainting = dl.D_
 
 scores = np.zeros((N_EXP, nb_s))
 psnrs = np.zeros((N_EXP, nb_s))
+rec_images = np.zeros((N_EXP, nb_s, dim_image, dim_image))
 
 for n_exp in tqdm(range(N_EXP)):
 
@@ -67,17 +68,21 @@ for n_exp in tqdm(range(N_EXP)):
         
         scores[n_exp, i] = recovery_score(D_inpainting, D_no_inpainting)
         
-        # rec_patches = dl_inpainting.rec().reshape((n_patches, 
-        #                                            dim_patch, 
-        #                                            dim_patch))
-        # rec_inpainting = combine_patches(rec_patches)
+        rec_patches = dl_inpainting.rec(y_inpainting).reshape((n_patches, 
+                                                   dim_patch, 
+                                                   dim_patch))
+        rec_inpainting = combine_patches(rec_patches)
+        rec_inpainting = np.clip(rec_inpainting, 0, 1)
 
-        # psnrs[n_exp, i] = psnr(rec_inpainting, img)
+        rec_images[n_exp, i, :] = rec_inpainting
+        psnrs[n_exp, i] = psnr(rec_inpainting, img)
 
 results_df = {
     "scores": {"scores": scores},
-    # "psnrs": {"psnrs": psnrs},
+    "psnrs": {"psnrs": psnrs},
     "s_values": {"s_values": s_values}
 }
 results_df = pd.DataFrame(results_df)
 results_df.to_pickle("../results/inpainting_patches.pickle")
+
+np.save("../results/inpainting_patches_rec_images.npy", rec_images)

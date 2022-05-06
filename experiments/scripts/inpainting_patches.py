@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 DATA_PATH = '../data/flowers.png'
 DEVICE = "cuda:1"
-N_EXP = 1
+N_EXP = 10
 RNG = np.random.default_rng(100)
 
 dim_image = 200
@@ -20,7 +20,7 @@ patch_len = dim_patch ** 2
 n_patches = (dim_image // dim_patch) ** 2
 
 n_atoms = 100
-nb_s = 10
+nb_s = 50
 s_values = np.linspace(0, 1, nb_s)
 
 # Image preprocessing

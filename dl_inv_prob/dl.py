@@ -414,3 +414,23 @@ class DictionaryLearning(nn.Module):
         # Training
         loss = self.training_process()
         return loss
+
+    def rec(self, y):
+        """Reconstruct the signal with one forward pass from the data.
+
+        Parameters
+        ----------
+        y : np.array, shape (n_matrices, dim_y, data_size)
+            Observations to be processed.
+
+        Returns
+        -------
+        rec : np.array, shape (n_matrices, dim_y, data_size)
+            Reconstructed signal.
+        """
+        with torch.no_grad():
+            y = torch.tensor(y, device=self.device, dtype=torch.float)
+            x = self.forward(y)
+            rec = torch.matmul(self.D, x)
+        
+        return rec.detach().to("cpu").numpy()

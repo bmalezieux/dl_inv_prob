@@ -8,6 +8,28 @@ from dl_inv_prob.utils import generate_data, recovery_score, generate_dico
 DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
 
 
+def test_same_path():
+    rng = np.random.default_rng(100)
+    dico = generate_dico(50, 50, rng=rng)
+    Y, _ = generate_data(dico[None, :], 1000, rng=rng)
+    Y = Y.transpose((2, 1, 0))
+
+    masks = rng.binomial(1, 1, size=(1000, 50))
+    A = np.concatenate([np.diag(mask)[None, :] for mask in masks])
+    Y_inpainting = A @ Y
+
+    D_init = generate_dico(100, 50, rng=rng)
+    dl1 = DictionaryLearning(100, lambd=0.1, init_D=D_init, device=DEVICE,
+                             rng=rng)
+    dl1.fit(Y)
+
+    dl2 = DictionaryLearning(100, lambd=0.1, init_D=D_init, device=DEVICE,
+                             rng=rng)
+    dl2.fit(Y_inpainting, A)
+
+    assert recovery_score(dl1.D_, dl2.D_) == 1.0
+
+
 def test_run_dl():
     rng = np.random.default_rng(100)
     dl = DictionaryLearning(50, device=DEVICE, rng=rng)

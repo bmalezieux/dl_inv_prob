@@ -16,10 +16,6 @@ dim_patch = 10
 patch_len = dim_patch ** 2
 n_patches = (dim_image // dim_patch) ** 2
 n_atoms = 100
-nb_s = 2
-s_values = np.linspace(0, 1, nb_s)
-
-scores = np.zeros((N_EXP, nb_s))
 
 # Image preprocessing
 img = Image.open(DATA_PATH)

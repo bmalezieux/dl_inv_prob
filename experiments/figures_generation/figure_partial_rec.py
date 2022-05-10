@@ -25,5 +25,5 @@ for i in range(scores.shape[1]):
 plt.plot(dim_m, np.sqrt(dim_m / n), label="Perfect", color="black")
 plt.xlabel("Dim. measurements")
 plt.ylabel("Rec. score")
-plt.legend(title="Sparsity", loc='upper left')
+plt.legend(title="Sparsity", loc='upper left', bbox_to_anchor=(1.05, 1))
 plt.savefig("../figures/score_partial_rec.pdf")

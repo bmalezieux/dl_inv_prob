@@ -3,6 +3,10 @@
 *.png
 *.npy
 *.pickle
+*.csv
+
+# Data
+!experiments/data/flowers.png
 
 # VS code
 .vscode

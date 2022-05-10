@@ -5,9 +5,8 @@ import pandas as pd
 from scipy.stats import ortho_group
 from tqdm import tqdm
 from dl_inv_prob.dl import DictionaryLearning
-from dl_inv_prob.utils import recovery_score
+from dl_inv_prob.utils import recovery_score, create_patches_overlap
 from PIL import Image
-from sklearn.feature_extraction.image import extract_patches_2d
 
 
 def compute_results(Y, A, cov_inv, n_components, D_init, D_true, rng, device):
@@ -26,7 +25,7 @@ def compute_results(Y, A, cov_inv, n_components, D_init, D_true, rng, device):
 
 
 DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
-N_EXP = 1
+N_EXP = 10
 RNG = np.random.default_rng(100)
 PATH_DATA = "../data/flowers.png"
 
@@ -45,17 +44,16 @@ im_gray_resized = im_gray.resize((128, 128), Image.ANTIALIAS)
 im_to_process = np.array(im_gray_resized) / 255.
 
 # Patches
-patches = extract_patches_2d(im_to_process, (dim_patch, dim_patch))
-patches = patches.reshape(patches.shape[0], -1)
+patches = create_patches_overlap(im_to_process, dim_patch)
 RNG.shuffle(patches)
-patches = patches.T
 
 # Parameters experiment
 sigma_diag = 0.3
 lambd = 0.1
 N_matrices = 10
 reg_list = np.arange(0.1, 0.5, 0.1)
-D_init = patches[:, :n_components]
+# D_init = patches[:, :n_components]
+D_init = RNG.normal(size=(patches.shape[0], n_components))
 result_list = []
 
 # Operators

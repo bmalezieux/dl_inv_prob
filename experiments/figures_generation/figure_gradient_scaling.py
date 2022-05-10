@@ -14,7 +14,7 @@ scores_results = results["scores"][:-1]
 loss_results = results["loss"][:-1]
 reg_list = results["reg_list"]["reg_list"]
 
-new_times = np.linspace(0, 30, 100)
+new_times = np.linspace(0, 100, 100)
 recoveries = []
 for i in range(len(times_results)):
     recoveries.append(np.zeros((len(times_results[i]), len(new_times))))

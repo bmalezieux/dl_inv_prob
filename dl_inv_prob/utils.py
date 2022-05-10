@@ -68,3 +68,28 @@ def recovery_score(D, Dref):
     score = cost_matrix[row_ind, col_ind].sum() / D.shape[1]
 
     return score
+
+
+def create_patches_overlap(im, m):
+    """Create patches from an image with overlap
+
+    Parameters
+    ----------
+    im : np.array (height, width)
+        Image
+    m : int
+        patche width
+
+    Returns
+    -------
+    np.array (m, number of patches)
+        Patches
+    """
+    r, c = im.shape
+    patches = []
+    for i in range(r):
+        for j in range(c):
+            if i + m <= r and j + m <= c:
+                patches.append((im[i:i+m, j:j+m]).reshape(m*m, 1))
+    result_y = np.concatenate(patches, axis=1)
+    return result_y

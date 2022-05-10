@@ -9,9 +9,10 @@ df = pd.read_pickle('../results/inpainting_patches.pickle')
 psnrs = df.psnrs.psnrs
 psnrs_patch_init = df.psnrs_patch_init.psnrs_patch_init
 psnrs_corrupted = df.psnrs_corrupted.psnrs_corrupted
+psnrs_overlap = df.psnrs_overlap.psnrs_overlap
 s_values = df.s_values.s_values
-quantities = [psnrs, psnrs_patch_init, psnrs_corrupted]
-labels = ['random init', 'patch init', 'corrupted image']
+quantities = [psnrs, psnrs_patch_init, psnrs_corrupted, psnrs_overlap]
+labels = ['random init', 'patch init', 'corrupted image', 'overlap']
 
 fig = plt.figure()
 

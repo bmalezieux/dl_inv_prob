@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.optimize import linear_sum_assignment
-from sklearn.feature_extraction.image import extract_patches_2d
 
 
 def generate_dico(n_components, dim_signal, rng=None):
@@ -50,7 +49,8 @@ def generate_data(D, N, s=0.1, rng=None):
     n_components = D.shape[2]
     n_dicos = D.shape[0]
     if rng is None:
-        X = (np.random.random((n_dicos, n_components, N)) > (1-s)).astype(float)
+        X = (np.random.random((n_dicos, n_components, N)) > (1 - s))
+        X = X.astype(float)
         X *= np.random.normal(scale=1, size=(n_dicos, n_components, N))
     else:
         X = (rng.random((n_dicos, n_components, N)) > (1-s)).astype(float)
@@ -94,7 +94,7 @@ def extract_patches(img, dim_patch):
             res[i_patch, :, :] = img[i:i + dim_patch, j:j + dim_patch]
             i_patch += 1
     patches = np.array(res)
-    
+
     return patches
 
 
@@ -117,7 +117,7 @@ def combine_patches(patches):
     rows = [np.hstack([patches[i] for i in range(k, k + dim_grid)])
             for k in range(0, n_patches, dim_grid)]
     img = np.vstack(rows)
-    
+
     return img
 
 
@@ -138,35 +138,74 @@ def psnr(rec, ref):
     """
     mse = np.square(rec - ref).mean()
     psnr = 10 * np.log10(1 / mse)
-    
+
     return psnr
 
-def init_dictionary_img(img, dim_patch, n_atoms, rng=None):
-    """Compute a dictionary containing random flattened patches of the image.
+
+def create_patches_overlap(im, m, A=None):
+    """Create an array of flattened overlapping patches.
 
     Parameters
     ----------
-    img : numpy.array, shape (height, width)
+    im : numpy.array, shape (height, width)
         Input image
-    dim_patch : int
-        Dimension of patches to extract
-    n_atoms : int
-        Number of atoms in the dictionary
-    rng : np.random.Generator (default None)
-        Randomness generator
-    
+    m : int
+        Patch dimension
+    A : numpy.array, shape (height, width), optional (default None)
+        Image mask
+
     Returns
     -------
-    dict : numpy.array, shape (dim_patch ** 2, n_atoms)
-        Dictionary
+    result_y : numpy.array, shape (n_patches, m**2)
+        Array of flattened patches
+    masks : numpy.array, shape (n_patches, m**2)
+        Array of flattened partial masks
     """
-    patches = extract_patches_2d(img, (dim_patch, dim_patch),
-                                 max_patches=n_atoms)
-    patches = patches.reshape(patches.shape[0], -1)
-    if rng == None:
-        np.random.shuffle(patches)
+    r, c = im.shape
+    patches = []
+    patches_a = []
+    for i in range(r):
+        for j in range(c):
+            if i + m <= r and j + m <= c:
+                patches.append((im[i:i+m, j:j+m]).reshape(m*m, 1))
+                if A is not None:
+                    patches_a.append((A[i:i+m, j:j+m]).reshape(m*m, 1))
+    result_y = np.concatenate(patches, axis=1).T
+    if A is not None:
+        masks = np.concatenate(patches_a, axis=1).T
+        return result_y, masks
     else:
-        rng.shuffle(patches)
-    patches = patches.T
-    
-    return patches
+        return result_y, (result_y != 0).astype(float)
+
+
+def patch_average(patches, m, r, c):
+    """Aggregate overlapping patches to an image by averaging.
+
+    Parameters
+    ----------
+    patches : numpy.array, shape (n_patches, m**2)
+        Array of flattened patches
+    m : int
+        Patch dimension
+    r : int
+        Image height
+    c : int
+        Image width
+
+    Returns
+    -------
+    im : numpy.array, shape (height, width)
+        Output image
+    """
+    im = np.zeros((r, c))
+    avg = np.zeros((r, c))
+    cpt = 0
+    for i in range(r):
+        for j in range(c):
+            if i+m <= r and j+m <= c:
+                im[i:i+m, j:j+m] += patches[cpt, :].reshape(m, m)
+                avg[i:i+m, j:j+m] += np.ones((m, m))
+                cpt += 1
+    im = im / avg
+
+    return im

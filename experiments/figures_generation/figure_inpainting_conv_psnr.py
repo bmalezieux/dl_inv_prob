@@ -5,7 +5,7 @@ import pandas as pd
 
 # plt.style.use('figures_style_small.mplstyle')
 
-df = pd.read_pickle('../results/inpainting_patches.pickle')
+df = pd.read_pickle('../results/inpainting_conv.pickle')
 psnrs = df.psnrs.psnrs
 psnrs_corrupted = df.psnrs_corrupted.psnrs_corrupted
 s_values = df.s_values.s_values
@@ -27,4 +27,5 @@ plt.xlim([0, 1])
 plt.xlabel("Proportion of missing values")
 plt.ylabel("PSNR (dB)")
 plt.legend()
-plt.savefig("../figures/inpainting_patches_psnr.pdf")
+plt.title('Convolutional inpainting')
+plt.savefig("../figures/inpainting_conv_psnr.pdf")

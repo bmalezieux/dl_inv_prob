@@ -322,8 +322,10 @@ class DictionaryLearning(nn.Module):
             loss.backward()
 
             # Gradient correction
-            with torch.no_grad():
-                self.D.grad.data = torch.matmul(self.cov_inv, self.D.grad.data)
+            if self.cov_inv is not None:
+                with torch.no_grad():
+                    self.D.grad.data = torch.matmul(self.cov_inv,
+                                                    self.D.grad.data)
 
             # Line search
             step, end = self.line_search(step, loss)
@@ -384,9 +386,7 @@ class DictionaryLearning(nn.Module):
 
         # Covariance
         if cov_inv is None:
-            self.cov_inv = torch.eye(
-                self.dim_signal, device=self.device, dtype=torch.float
-            )
+            self.cov_inv = None
         else:
             self.cov_inv = torch.from_numpy(cov_inv).float().to(self.device)
 

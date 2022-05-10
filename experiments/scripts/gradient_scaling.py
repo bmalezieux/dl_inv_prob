@@ -44,7 +44,7 @@ im_gray_resized = im_gray.resize((128, 128), Image.ANTIALIAS)
 im_to_process = np.array(im_gray_resized) / 255.
 
 # Patches
-patches = create_patches_overlap(im_to_process, dim_patch)
+patches, _ = create_patches_overlap(im_to_process, dim_patch)
 RNG.shuffle(patches)
 
 # Parameters experiment

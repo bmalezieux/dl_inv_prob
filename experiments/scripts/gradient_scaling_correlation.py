@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-
+import ipdb
 from scipy.stats import ortho_group
 from tqdm import tqdm
 from celer import Lasso
@@ -8,6 +8,7 @@ from threadpoolctl import threadpool_limits
 from joblib import delayed, Parallel
 from sklearn.feature_extraction.image import extract_patches_2d
 from PIL import Image
+from dl_inv_prob.utils import generate_data, generate_dico
 
 
 def compute_corr(Y, true_gradient, m, N_matrices, D_hat,
@@ -94,20 +95,33 @@ RNG.shuffle(patches)
 patches = patches.T
 N_data = patches.shape[1]
 
+# Synthetic data
+dico_truth = generate_dico(n_components, dim_signal)
+data, _ = generate_data(dico_truth[None, :], N_data)
+data = data[0]
+D_hat_synt = generate_dico(n_components, dim_signal)
+
 # Parameters experiment
 sigma_diag = np.linspace(0, 0.5, 20)
 lambd = 0.1
 N_matrices = 10
 reg_list = np.arange(0.1, 0.5, 0.1)
 D_hat = patches[:, :n_components]
-result_list = []
+result_image_list = []
+result_synt_list = []
 
 # True gradient
 lasso = Lasso(alpha=lambd / patches.shape[0], fit_intercept=False)
 lasso.fit(D_hat, patches)
 z_hat = lasso.coef_.T
-true_gradient = (D_hat @ z_hat - patches) @ z_hat.T
-true_gradient /= np.linalg.norm(true_gradient)
+true_gradient_image = (D_hat @ z_hat - patches) @ z_hat.T
+true_gradient_image /= np.linalg.norm(true_gradient_image)
+
+lasso = Lasso(alpha=lambd / data.shape[0], fit_intercept=False)
+lasso.fit(D_hat_synt, data)
+z_hat = lasso.coef_.T
+true_gradient_synt = (D_hat_synt @ z_hat - data) @ z_hat.T
+true_gradient_synt /= np.linalg.norm(true_gradient_synt)
 
 seed_vector = RNG.permutation(np.arange(0, 100, 1, dtype=int))[:N_EXP]
 
@@ -122,10 +136,10 @@ for sigma in tqdm(sigma_diag):
 
     empirical_cov = (A.transpose((0, 2, 1)) @ A).mean(axis=0)
 
-    results = Parallel(n_jobs=10)(
+    results_image = Parallel(n_jobs=10)(
         delayed(compute_corr)(
             patches.copy(),
-            true_gradient.copy(),
+            true_gradient_image.copy(),
             m,
             N_matrices,
             D_hat.copy(),
@@ -135,13 +149,31 @@ for sigma in tqdm(sigma_diag):
             seed
         ) for seed in seed_vector
     )
-    results = np.array(results)
-    result_list.append(results.copy())
+    results_image = np.array(results_image)
+    result_image_list.append(results_image.copy())
 
-results_final = np.array(result_list)
+    results_synt = Parallel(n_jobs=10)(
+        delayed(compute_corr)(
+            data.copy(),
+            true_gradient_synt.copy(),
+            m,
+            N_matrices,
+            D_hat_synt.copy(),
+            empirical_cov.copy(),
+            reg_list,
+            lambd,
+            seed
+        ) for seed in seed_vector
+    )
+    results_synt = np.array(results_synt)
+    result_synt_list.append(results_synt.copy())
+
+results_image_final = np.array(result_image_list)
+results_synt_final = np.array(result_synt_list)
 
 results_df = {
-    "results": {"results": results_final},
+    "results_image": {"results": results_image_final},
+    "results_synth": {"results": results_synt_final},
     "sigma_diag": {"sigma_diag": sigma_diag},
     "reg_list": {"reg_list": reg_list}
 }

@@ -15,3 +15,5 @@ legend.title_fontsize : 8
 
 figure.figsize : 5.5, 1.5
 figure.autolayout: True
+
+lines.linewidth: 1

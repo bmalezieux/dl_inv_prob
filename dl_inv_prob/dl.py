@@ -163,7 +163,7 @@ class DictionaryLearning(nn.Module):
         """
         out = torch.zeros(
             (self.n_matrices, self.dim_x, y.shape[2]),
-            dtype=torch.float64,
+            dtype=torch.float,
             device=self.device
         )
 
@@ -375,11 +375,11 @@ class DictionaryLearning(nn.Module):
         if A is None:
             self.dim_signal = self.dim_y
             self.operator = torch.eye(
-                self.dim_y, device=self.device, dtype=torch.float64
+                self.dim_y, device=self.device, dtype=torch.float
             )[None, :]
         else:
             self.dim_signal = A.shape[2]
-            self.operator = torch.from_numpy(A).double().to(self.device)
+            self.operator = torch.from_numpy(A).float().to(self.device)
 
         self.n_matrices = self.operator.shape[0]
 
@@ -387,7 +387,7 @@ class DictionaryLearning(nn.Module):
         if cov_inv is None:
             self.cov_inv = None
         else:
-            self.cov_inv = torch.from_numpy(cov_inv).double().to(self.device)
+            self.cov_inv = torch.from_numpy(cov_inv).float().to(self.device)
 
         # Dictionary
         if self.init_D is None:
@@ -400,11 +400,11 @@ class DictionaryLearning(nn.Module):
             if A is None:
                 dico = Y[0, :, choice]
             self.D = nn.Parameter(
-                torch.tensor(dico, device=self.device, dtype=torch.float64)
+                torch.tensor(dico, device=self.device, dtype=torch.float)
             )
         else:
             dico_tensor = torch.from_numpy(
-                self.init_D).double().to(self.device)
+                self.init_D).float().to(self.device)
             self.D = nn.Parameter(dico_tensor)
 
         # Scaling and computing lipschitz
@@ -412,7 +412,7 @@ class DictionaryLearning(nn.Module):
         self.compute_lipschitz()
 
         # Data
-        self.Y_tensor = torch.from_numpy(Y).double().to(self.device)
+        self.Y_tensor = torch.from_numpy(Y).float().to(self.device)
 
         # Training
         loss = self.training_process()
@@ -432,7 +432,7 @@ class DictionaryLearning(nn.Module):
             Reconstructed signal.
         """
         with torch.no_grad():
-            y = torch.tensor(y, device=self.device, dtype=torch.float64)
+            y = torch.tensor(y, device=self.device, dtype=torch.float)
             x = self.forward(y)
             rec = torch.matmul(self.D, x)
 
@@ -487,7 +487,7 @@ class Inpainting(DictionaryLearning):
         """
         out = torch.zeros(
             (self.n_matrices, self.dim_x, y.shape[2]),
-            dtype=torch.float64,
+            dtype=torch.float,
             device=self.device
         )
 
@@ -545,16 +545,16 @@ class Inpainting(DictionaryLearning):
         self.dim_signal = Y.shape[1]
 
         # Mask
-        self.mask = torch.from_numpy(mask).double().to(self.device)
+        self.mask = torch.from_numpy(mask).float().to(self.device)
         self.n_matrices = self.mask.shape[0]
 
         # Covariance
         if cov_inv is None:
             self.cov_inv = torch.eye(
-                self.dim_signal, device=self.device, dtype=torch.float64
+                self.dim_signal, device=self.device, dtype=torch.float
             )
         else:
-            self.cov_inv = torch.from_numpy(cov_inv).double().to(self.device)
+            self.cov_inv = torch.from_numpy(cov_inv).float().to(self.device)
 
         # Dictionary
         if self.init_D is None:
@@ -564,11 +564,11 @@ class Inpainting(DictionaryLearning):
                 size=(self.dim_signal, self.n_components)
             )
             self.D = nn.Parameter(
-                torch.tensor(dico, device=self.device, dtype=torch.float64)
+                torch.tensor(dico, device=self.device, dtype=torch.float)
             )
         else:
             dico_tensor = torch.from_numpy(
-                self.init_D).double().to(self.device)
+                self.init_D).float().to(self.device)
             self.D = nn.Parameter(dico_tensor)
 
         # Scaling and computing lipschitz
@@ -576,7 +576,7 @@ class Inpainting(DictionaryLearning):
         self.compute_lipschitz()
 
         # Data
-        self.Y_tensor = torch.from_numpy(Y).double().to(self.device)
+        self.Y_tensor = torch.from_numpy(Y).float().to(self.device)
 
         # Training
         loss = self.training_process()

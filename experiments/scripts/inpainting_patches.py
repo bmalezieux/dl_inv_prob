@@ -9,14 +9,14 @@ from tqdm import tqdm
 
 DATA_PATH = '../data/flowers.png'
 DEVICE = "cuda:3"
-N_EXP = 1
+N_EXP = 10
 RNG = np.random.default_rng(2022)
 
-dim_image = 200
-dim_patch = 10
+dim_image = 128
+dim_patch = 8
 patch_len = dim_patch ** 2
 n_atoms = 100
-nb_s = 5
+nb_s = 10
 s_values = np.linspace(0, 1, nb_s)
 
 scores = np.zeros((N_EXP, nb_s))
@@ -68,8 +68,8 @@ for n_exp in tqdm(range(N_EXP)):
 
         scores[n_exp, i] = recovery_score(D_inpainting, D_no_inpainting)
 
-        # Compute the reconstructed image for each method
-        rec_patches = dl_inpainting.rec(y_inpainting[:, :, None])
+        # Compute the reconstructed image
+        rec_patches = dl_inpainting.rec()
         rec = patch_average(rec_patches, dim_patch,
                             dim_image, dim_image)
         rec = np.clip(rec, 0, 1)

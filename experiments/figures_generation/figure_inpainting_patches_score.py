@@ -20,7 +20,6 @@ plt.fill_between(
 
 plt.xlim([0, 1])
 plt.ylim([0, 1])
-# plt.yticks(np.linspace(0, 1, 6))
 plt.xlabel("Proportion of missing values")
 plt.ylabel("Rec. score")
 plt.savefig("../figures/inpainting_patches_score.pdf")

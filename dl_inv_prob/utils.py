@@ -1,10 +1,12 @@
 import numpy as np
 from scipy.optimize import linear_sum_assignment
+from scipy.signal import correlate2d
+from sklearn.datasets import load_digits
 
 
 def generate_dico(n_components, dim_signal, rng=None):
     """
-    Generates a normalized random gaussian dictionary
+    Generate a normalized random gaussian dictionary.
 
     Parameters
     ----------
@@ -12,39 +14,43 @@ def generate_dico(n_components, dim_signal, rng=None):
         Number of atoms
     dim_signal : int
         Dimension of the signal
-    rng : np.random.Generator
+    rng : np.random.Generator, optional (default None)
+        Random generator
 
     Returns
     -------
-    np.array (dim_signal, n_components)
-        Dictionary
+    numpy.array (dim_signal, n_components)
+        Generated dictionary
     """
     if rng is None:
         D = np.random.normal(size=(dim_signal, n_components))
     else:
         D = rng.normal(size=(dim_signal, n_components))
-    D /= np.sqrt(np.sum(D**2, axis=0))
+    D /= np.sqrt(np.sum(D ** 2, axis=0))
     return D
 
 
 def generate_data(D, N, s=0.1, rng=None):
     """
-    Generate data from dictionaries
+    Generate data from dictionaries.
 
     Parameters
     ----------
-    D : np.array (n_dicos, dim_signal, n_components)
-        dictionary
+    D : numpy.array (n_dicos, dim_signal, n_components)
+        Dictionary
     N : int
         number of samples per dictionary
-    s : float, optional
-        sparsity, by default 0.3
-    rng : np.random.Generator
+    s : float, optional (default 0.3)
+        Sparsity
+    rng : numpy.random.Generator, optional (default None)
+        Random generator
 
     Returns
     -------
-    np.array (n_dicos, dim_signal, N), np.array (n_dicos, n_components, N)
-        signal, sparse codes
+    signal : numpy.array, shape (n_dicos, dim_signal, N)
+        Generated signal
+    X : numpy.array, shape (n_dicos, n_components, N)
+        Generated sparse codes
     """
     n_components = D.shape[2]
     n_dicos = D.shape[0]
@@ -53,16 +59,30 @@ def generate_data(D, N, s=0.1, rng=None):
         X = X.astype(float)
         X *= np.random.normal(scale=1, size=(n_dicos, n_components, N))
     else:
-        X = (rng.random((n_dicos, n_components, N)) > (1-s)).astype(float)
+        X = (rng.random((n_dicos, n_components, N)) > (1 - s)).astype(float)
         X *= rng.normal(scale=1, size=(n_dicos, n_components, N))
-    return D @ X, X
+    signal = D @ X
+
+    return signal, X
 
 
-def recovery_score(D, Dref):
+def recovery_score(D, D_ref):
     """
-    Comparison between two dictionaries
+    Compute a similarity score in [0, 1] between two dictionaries.
+
+    Parameters
+    ----------
+    D : numpy.array, shape (dim_signal, n_components)
+        Dictionary
+    Dref : numpy.array, shape (dim_signal, n_components)
+        Reference dictionary
+
+    Returns
+    -------
+    score : float
+        _Recovery score in [0, 1]
     """
-    cost_matrix = np.abs(Dref.T @ D)
+    cost_matrix = np.abs(D_ref.T @ D)
 
     row_ind, col_ind = linear_sum_assignment(cost_matrix, maximize=True)
     score = cost_matrix[row_ind, col_ind].sum() / D.shape[1]
@@ -70,8 +90,37 @@ def recovery_score(D, Dref):
     return score
 
 
+def conv_recovery_score(D, D_ref):
+    """Compute a similarity score between convolutional dictionaries.
+
+    Parameters
+    ----------
+    D : numpy.array, shape (n_atoms, atom_height, atom_width)
+        Dictionary
+    D_ref : numpy.array, shape (n_atoms, atom_height, atom_width)
+        Reference dictionary
+
+    Returns
+    -------
+    score : float
+        Similarity score in [0, 1] between D and D_ref
+    """
+    corr = np.zeros((D.shape[0], D_ref.shape[0]))
+
+    for i in range(D.shape[0]):
+        for j in range(D_ref.shape[0]):
+            corr_fun = correlate2d(D[i, :, :], D_ref[j, :, :])
+            corr[i, j] = np.max(np.abs(corr_fun))
+
+    row_index, col_index = linear_sum_assignment(corr, maximize=True)
+    score = corr[row_index, col_index].mean()
+
+    return score
+
+
 def extract_patches(img, dim_patch):
-    """Extract non overlapping square patches from an image in a grid pattern.
+    """
+    Extract a grid of non-overlapping square patches from a square image.
 
     Parameters
     ----------
@@ -99,7 +148,8 @@ def extract_patches(img, dim_patch):
 
 
 def combine_patches(patches):
-    """Combine extracted patches (in a grid fashion) into the original image.
+    """
+    Combine extracted patches (in a grid fashion) into the original image.
 
     Parameters
     ----------
@@ -122,7 +172,8 @@ def combine_patches(patches):
 
 
 def psnr(rec, ref):
-    """Compute the peak signal-to-noise ratio for grey images in [0, 1].
+    """
+    Compute the peak signal-to-noise ratio for grey images in [0, 1].
 
     Parameters
     ----------
@@ -143,7 +194,8 @@ def psnr(rec, ref):
 
 
 def create_patches_overlap(im, m, A=None):
-    """Create an array of flattened overlapping patches.
+    """
+    Create an array of flattened overlapping patches.
 
     Parameters
     ----------
@@ -156,9 +208,9 @@ def create_patches_overlap(im, m, A=None):
 
     Returns
     -------
-    result_y : numpy.array, shape (n_patches, m**2)
+    result_y : numpy.array, shape (n_patches, m ** 2)
         Array of flattened patches
-    masks : numpy.array, shape (n_patches, m**2)
+    masks : numpy.array, shape (n_patches, m ** 2)
         Array of flattened partial masks
     """
     r, c = im.shape
@@ -167,9 +219,9 @@ def create_patches_overlap(im, m, A=None):
     for i in range(r):
         for j in range(c):
             if i + m <= r and j + m <= c:
-                patches.append((im[i:i+m, j:j+m]).reshape(m*m, 1))
+                patches.append((im[i:i + m, j:j + m]).reshape(m * m, 1))
                 if A is not None:
-                    patches_a.append((A[i:i+m, j:j+m]).reshape(m*m, 1))
+                    patches_a.append((A[i:i + m, j:j + m]).reshape(m * m, 1))
     result_y = np.concatenate(patches, axis=1).T
     if A is not None:
         masks = np.concatenate(patches_a, axis=1).T
@@ -179,11 +231,12 @@ def create_patches_overlap(im, m, A=None):
 
 
 def patch_average(patches, m, r, c):
-    """Aggregate overlapping patches to an image by averaging.
+    """
+    Aggregate overlapping patches to an image by averaging them.
 
     Parameters
     ----------
-    patches : numpy.array, shape (n_patches, m**2)
+    patches : numpy.array, shape (n_patches, m ** 2)
         Array of flattened patches
     m : int
         Patch dimension
@@ -202,10 +255,72 @@ def patch_average(patches, m, r, c):
     cpt = 0
     for i in range(r):
         for j in range(c):
-            if i+m <= r and j+m <= c:
-                im[i:i+m, j:j+m] += patches[cpt, :].reshape(m, m)
-                avg[i:i+m, j:j+m] += np.ones((m, m))
+            if i + m <= r and j + m <= c:
+                im[i:i + m, j:j + m] += patches[cpt, :].reshape(m, m)
+                avg[i:i + m, j:j + m] += np.ones((m, m))
                 cpt += 1
     im = im / avg
 
     return im
+
+
+def create_image_digits(width, height, k=0.1, rng=None):
+    """
+    Generate an image filled with digits.
+
+    Parameters
+    ----------
+    width : int
+        Image width
+    height : int
+        Image height
+    k : float, optional (default 0.1)
+        Proportion of void in the image
+    rng : numpy.random.Generator, optional (default None)
+        Random generator
+
+    Returns
+    -------
+    image : numpy.array, shape (height, width)
+        Generated image with values in [0, 1]
+    """
+    digits = load_digits()
+    image = np.zeros((height, width))
+    if rng is None:
+        rng = np.random.default_rng()
+    for i in range(width // 10):
+        for j in range(height // 10):
+            if rng.random() > k:
+                random_img = digits.images[rng.integers(10)]
+                j_start, j_end = j * 10 + 1, (j + 1) * 10 - 1
+                i_start, i_end = i * 10, i * 10 + 8
+                image[j_start:j_end, i_start:i_end] = random_img
+    image /= 16
+
+    return image
+
+
+def rec_score_digits(D, D_ref):
+    """Score in [0, 1] which indicates if we recover D_ref in D.
+
+    Parameters
+    ----------
+    D : numpy.array, shape (n_atoms, atom_height, atom_width)
+        Convolutional dictionary
+    D_ref : numpy.array, shape (n_atoms, ref_atom_height, ref_atom_width)
+        Reference convolutional dictionary
+
+    Returns
+    -------
+    score : float
+        Returned score
+    """
+    scores = np.zeros(D_ref.shape[0])
+    for i in range(D_ref.shape[0]):
+        corr = np.zeros(D.shape[0])
+        for j in range(D.shape[0]):
+            corr[j] = np.abs(correlate2d(D[j], D_ref[i])).max()
+        scores[i] = corr.max()
+    score = scores.mean()
+
+    return score

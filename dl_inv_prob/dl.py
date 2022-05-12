@@ -419,22 +419,17 @@ class DictionaryLearning(nn.Module):
         loss = self.training_process()
         return loss
 
-    def rec(self, y):
-        """Reconstruct the signal with one forward pass from the data.
-
-        Parameters
-        ----------
-        y : np.array, shape (n_matrices, dim_y, data_size)
-            Observations to be processed.
+    def rec(self):
+        """
+        Reconstruct the signal with one forward pass from the data.
 
         Returns
         -------
         rec : np.array, shape (n_matrices, dim_y, data_size)
-            Reconstructed signal.
+            Reconstructed signal
         """
         with torch.no_grad():
-            y = torch.tensor(y, device=self.device, dtype=torch.float)
-            x = self.forward(y)
+            x = self.forward(self.Y_tensor)
             rec = torch.matmul(self.D, x)
 
         return rec.detach().to("cpu").numpy()
@@ -445,14 +440,23 @@ class Inpainting(DictionaryLearning):
     def __init__(self, n_components, lambd=0.1, max_iter=100,
                  init_D=None, step=1., algo="fista",
                  keep_dico=False, tol=1e-6, rng=None, device=None):
-        super().__init__(n_components, lambd, max_iter, init_D, step,
-                         algo, keep_dico, tol, rng, device)
+        super().__init__(n_components=n_components,
+                         lambd=lambd,
+                         max_iter=max_iter,
+                         init_D=init_D,
+                         step=step,
+                         algo=algo,
+                         keep_dico=keep_dico,
+                         tol=tol,
+                         rng=rng,
+                         device=device)
 
         self.mask = None
 
     def compute_lipschitz(self):
-        """ Computes an upper bound of the
-        Lipschitz constant of the dictionary for each matrix"""
+        """
+        Computes an upper bound of the Lipschitz constant of the dictionary.
+        """
         with torch.no_grad():
             product = self.mask[:, :, None] * self.D
             self.lipschitz = torch.norm(
@@ -463,7 +467,21 @@ class Inpainting(DictionaryLearning):
                 self.lipschitz = 1.
 
     def cost(self, y, x):
-        """ Cost function """
+        """
+        Compute the LASSO-like cost.
+
+        Parameters
+        ----------
+        y : torch.Tensor, shape (n_matrices, dim_y, data_size)
+            Input signal
+        x : torch.Tensor, shape (n_matrices, dim_x, data_size)
+            Sparse codes
+
+        Returns
+        -------
+        cost : float
+            Cost value
+        """
         product = self.mask[:, :, None] * self.D
 
         res = torch.matmul(product, x) - y
@@ -474,16 +492,16 @@ class Inpainting(DictionaryLearning):
 
     def forward(self, y):
         """
-        (F)ISTA-like forward pass
+        (F)ISTA-like forward pass.
 
         Parameters
         ----------
-        y : torch.Tensor, shape (n_matrices, dim_y, number of data)
+        y : torch.Tensor, shape (n_matrices, dim_y, data_size)
             Data to be processed by (F)ISTA
 
         Returns
         -------
-        out : torch.Tensor, shape (n_matrices, dim_x, number of data)
+        out : torch.Tensor, shape (n_matrices, dim_x, data_size)
             Approximation of the sparse code associated to y
         """
         out = torch.zeros(
@@ -525,21 +543,21 @@ class Inpainting(DictionaryLearning):
 
     def fit(self, Y, mask, cov_inv=None):
         """
-        Training procedure
+        Training procedure.
 
         Parameters
         ----------
-        Y : np.array, shape (n_matrices, dim_y, data_size)
-            Observations to be processed.
-        mask : np.array, shape (n_matrices, dim_y)
-            Diagonal masks.
-        cov_inv : np.array, shape (dim_signal, dim_signal)
+        Y : numpy.array, shape (n_matrices, dim_y, data_size)
+            Observations to be processed
+        mask : numpy.array, shape (n_matrices, dim_y)
+            Diagonal masks
+        cov_inv : numpy.array, shape (dim_signal, dim_signal)
             Inverse of covariance A.T @ A
 
         Returns
         -------
         loss : float
-            Final value of the loss after training.
+            Final value of the loss after training
         """
         # Dimension
         self.dim_y = Y.shape[1]
@@ -590,8 +608,16 @@ class ConvolutionalInpainting(DictionaryLearning):
                  lambd=0.1, max_iter=100,
                  init_D=None, step=1., algo="fista",
                  keep_dico=False, tol=1e-6, rng=None, device=None):
-        super().__init__(n_components, lambd, max_iter, init_D, step,
-                         algo, keep_dico, tol, rng, device)
+        super().__init__(n_components=n_components,
+                         lambd=lambd,
+                         max_iter=max_iter,
+                         init_D=init_D,
+                         step=step,
+                         algo=algo,
+                         keep_dico=keep_dico,
+                         tol=tol,
+                         rng=rng,
+                         device=device)
 
         self.mask = None
         self.conv = F.conv2d
@@ -601,12 +627,12 @@ class ConvolutionalInpainting(DictionaryLearning):
 
     def rescale(self):
         """
-        Constrains the dictionary to have normalized atoms
+        Constrains the dictionary to have normalized atoms.
 
         Returns
         -------
         norm_atoms : torch.Tensor, shape (n_atoms, 1)
-            Contains the norms of the current atoms.
+            Previous norms of the atoms
         """
         with torch.no_grad():
             norm_atoms = torch.linalg.norm(self.D, dim=(2, 3), keepdim=True)
@@ -616,19 +642,20 @@ class ConvolutionalInpainting(DictionaryLearning):
 
     def unscale(self, norm_atoms):
         """
-        Cancels the scaling using norms previously computed
+        Cancels the scaling using norms previously computed.
 
         Parameters
         ----------
         norm_atoms : torch.Tensor, shape (n_atoms, 1)
-            Contains the norms of the current atoms.
-            Computed by rescale()
+            Contains the norms of the current atoms computed by rescale()
         """
         with torch.no_grad():
             self.D *= norm_atoms
 
     def compute_lipschitz(self):
-        """ Compute the Lipschitz constant using the FFT """
+        """
+        Compute the Lipschitz constant using the FFT.
+        """
         with torch.no_grad():
             fourier_prior = fft.fftn(self.D, axis=(2, 3))
             self.lipschitz = torch.max(
@@ -642,7 +669,8 @@ class ConvolutionalInpainting(DictionaryLearning):
                 self.lipschitz = 1.
 
     def cost(self, y, x):
-        """Compute the LASSO-like convolutional cost.
+        """
+        Compute the LASSO-like convolutional cost.
 
         Parameters
         ----------
@@ -655,10 +683,9 @@ class ConvolutionalInpainting(DictionaryLearning):
 
         Returns
         -------
-        cost : torch.float
+        cost : float
             Cost value
         """
-        # dico = self.D * self.window
         rec = self.convt(x, self.D)
         diff = self.mask[None, :, :] * rec - y
         l2 = diff.ravel() @ diff.ravel()
@@ -669,7 +696,7 @@ class ConvolutionalInpainting(DictionaryLearning):
 
     def forward(self, y):
         """
-        (F)ISTA-like forward pass
+        (F)ISTA-like forward pass.
 
         Parameters
         ----------
@@ -709,7 +736,7 @@ class ConvolutionalInpainting(DictionaryLearning):
 
             # Thresholding
             thresh = torch.abs(out) - step * self.lambd
-            out = torch.sign(out) * F.relu(thresh)
+            out = F.relu(thresh)
 
             iterate = out.clone()
             # Apply momentum for FISTA
@@ -726,8 +753,8 @@ class ConvolutionalInpainting(DictionaryLearning):
 
         Returns
         -------
-        float
-            Final value of the loss after training.
+        loss : float
+            Final value of the loss after training
         """
         # Initial backtracking step
         step = self.step
@@ -777,19 +804,19 @@ class ConvolutionalInpainting(DictionaryLearning):
 
     def fit(self, Y, mask):
         """
-        Training procedure
+        Training procedure.
 
         Parameters
         ----------
-        Y : np.array, shape (batch_size, im_height, im_weight)
+        Y : numpy.array, shape (batch_size, im_height, im_weight)
             Observations to be processed
-        mask : np.array, shape (im_height, im_width)
+        mask : numpy.array, shape (im_height, im_width)
             Image mask
 
         Returns
         -------
         loss : float
-            Final value of the loss after training.
+            Final value of the loss after training
         """
         # Mask
         self.mask = torch.from_numpy(mask).float().to(self.device)
@@ -820,8 +847,9 @@ class ConvolutionalInpainting(DictionaryLearning):
         loss = self.training_process()
         return loss
 
-    def rec(self, y):
-        """Reconstruct the image with the learned atoms and sparse codes.
+    def rec(self):
+        """
+        Reconstruct the image with the learned atoms and sparse codes.
 
         Returns
         -------
@@ -829,8 +857,7 @@ class ConvolutionalInpainting(DictionaryLearning):
             Reconstructed image
         """
         with torch.no_grad():
-            y = torch.tensor(y, device=self.device, dtype=torch.float)
-            x = self.forward(y)
-            rec = self.convt(x, self.D).reshape(y.shape)
+            x = self.forward(self.Y_tensor)
+            rec = self.convt(x, self.D).reshape(self.Y_tensor.shape)
 
         return rec.detach().to("cpu").numpy()

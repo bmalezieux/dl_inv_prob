@@ -27,6 +27,7 @@ ax1.set_xlim([0, 1])
 ax1.set_xlabel("Proportion of missing values")
 ax1.set_ylabel("PSNR (dB)")
 ax1.legend(loc='upper right', fontsize=5)
+ax1.grid()
 
 ax2.plot(s_values, scores.mean(axis=0))
 ax2.fill_between(
@@ -40,4 +41,6 @@ ax2.set_xlim([0, 1])
 ax2.set_ylim([0, 1])
 ax2.set_xlabel("Proportion of missing values")
 ax2.set_ylabel("Rec. score")
+ax2.grid()
+
 plt.savefig("../figures/inpainting_patches.pdf")

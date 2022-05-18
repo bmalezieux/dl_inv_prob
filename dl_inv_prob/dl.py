@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.signal.windows import tukey
 import time
 import torch
 import torch.fft as fft
@@ -606,7 +607,7 @@ class ConvolutionalInpainting(DictionaryLearning):
 
     def __init__(self, n_components, atom_height, atom_width,
                  lambd=0.1, max_iter=100,
-                 init_D=None, step=1., algo="fista",
+                 init_D=None, step=1., algo="fista", alpha=None,
                  keep_dico=False, tol=1e-6, rng=None, device=None):
         super().__init__(n_components=n_components,
                          lambd=lambd,
@@ -624,6 +625,16 @@ class ConvolutionalInpainting(DictionaryLearning):
         self.convt = F.conv_transpose2d
         self.atom_height = atom_height
         self.atom_width = atom_width
+
+        self.alpha = alpha
+        if alpha is not None:
+            tukey_x = tukey(atom_height, alpha)
+            tukey_y = tukey(atom_width, alpha)
+            window = tukey_x[None, :] * tukey_y[:, None]
+            self.window = torch.tensor(window,
+                                       device=self.device,
+                                       dtype=torch.float,
+                                       requires_grad=False)[None, None, :, :]
 
     def rescale(self):
         """
@@ -686,7 +697,11 @@ class ConvolutionalInpainting(DictionaryLearning):
         cost : float
             Cost value
         """
-        rec = self.convt(x, self.D)
+        if self.alpha is None:
+            dico = self.D
+        else:
+            dico = self.D * self.window
+        rec = self.convt(x, dico)
         diff = self.mask[None, :, :] * rec - y
         l2 = diff.ravel() @ diff.ravel()
         l1 = torch.sum(torch.abs(x))
@@ -725,13 +740,17 @@ class ConvolutionalInpainting(DictionaryLearning):
         step = 1. / self.lipschitz
 
         for i in range(self.max_iter):
+            if self.alpha is None:
+                dico = self.D
+            else:
+                dico = self.D * self.window
             # Keep last iterate for FISTA
             iterate_old = iterate.clone()
 
             # Gradient descent
-            rec = self.convt(out, self.D)
+            rec = self.convt(out, dico)
             diff = self.mask[None, :, :] * (rec - y)
-            gradient = self.conv(diff, self.D)
+            gradient = self.conv(diff, dico)
             out = out - step * gradient
 
             # Thresholding
@@ -856,8 +875,194 @@ class ConvolutionalInpainting(DictionaryLearning):
         rec : torch.Tensor, shape (batch_size, im_height, im_width)
             Reconstructed image
         """
+        im_height = self.Y_tensor.shape[1] - self.kernel.shape[2] + 1
+        im_width = self.Y_tensor.shape[2] - self.kernel.shape[3] + 1
         with torch.no_grad():
             x = self.forward(self.Y_tensor)
-            rec = self.convt(x, self.D).reshape(self.Y_tensor.shape)
+            rec = self.convt(x, self.D).reshape((im_height, im_width))
 
         return rec.detach().to("cpu").numpy()
+
+
+class Deconvolution(ConvolutionalInpainting):
+
+    def __init__(self, n_components, atom_height, atom_width,
+                 lambd=0.1, max_iter=100,
+                 init_D=None, step=1., algo="fista", alpha=None,
+                 keep_dico=False, tol=1e-6, rng=None, device=None):
+        super().__init__(n_components=n_components,
+                         atom_height=atom_height,
+                         atom_width=atom_width,
+                         lambd=lambd,
+                         max_iter=max_iter,
+                         init_D=init_D,
+                         step=step,
+                         algo=algo,
+                         alpha=alpha,
+                         keep_dico=keep_dico,
+                         tol=tol,
+                         rng=rng,
+                         device=device)
+
+        self.kernel = None
+
+    def compute_lipschitz(self):
+        """
+        Compute the Lipschitz constant using the FFT.
+        """
+        with torch.no_grad():
+            fourier_D = fft.fftn(self.D, axis=(2, 3))
+            lip_D = torch.max(
+                torch.max(
+                    torch.real(fourier_D * torch.conj(fourier_D)),
+                    dim=3
+                )[0],
+                dim=2
+            )[0].sum().item()
+            fourier_kernel = fft.fftn(self.kernel, axis=(2, 3))
+            lip_kernel = torch.max(
+                torch.max(
+                    torch.real(fourier_kernel * torch.conj(fourier_kernel)),
+                    dim=3
+                )[0],
+                dim=2
+            )[0].sum().item()
+            self.lipschitz = lip_D * lip_kernel
+
+            if self.lipschitz == 0:
+                self.lipschitz = 1.
+
+    def cost(self, y, x):
+        """
+        Compute the LASSO-like convolutional cost.
+
+        Parameters
+        ----------
+        y : torch.Tensor, shape (batch_size, im_height, im_width)
+            Input signal
+        x : torch.Tensor,
+            shape (batch_size, n_atoms, im_height - atom_height + 1,
+                                        im_width - atom_width + 1)
+            Sparse codes
+
+        Returns
+        -------
+        cost : float
+            Cost value
+        """
+        if self.alpha is None:
+            dico = self.D
+        else:
+            dico = self.D * self.window
+        rec = self.convt(x, dico)
+        diff = self.convt(rec, self.kernel) - y
+        l2 = diff.ravel() @ diff.ravel()
+        l1 = torch.sum(torch.abs(x))
+        cost = 0.5 * l2 + self.lambd * l1
+
+        return cost
+
+    def forward(self, y):
+        """
+        (F)ISTA-like forward pass.
+
+        Parameters
+        ----------
+        y : torch.Tensor, shape (batch_size, im_height, im_weight)
+            Data to be processed by (F)ISTA
+
+        Returns
+        -------
+        out : torch.Tensor, shape (batch_size, 1, im_height - atom_height + 1,
+                                                  im_width - atom_width + 1)
+            Approximation of the sparse code associated to y
+        """
+        batch_size, im_height, im_width = y.shape 
+        im_height -= self.kernel.shape[2] - 1
+        im_width -= self.kernel.shape[3] - 1
+        out = torch.zeros(
+            (batch_size, self.n_components, im_height - self.atom_height + 1,
+             im_width - self.atom_width + 1),
+            dtype=torch.float,
+            device=self.device
+        )
+
+        # For FISTA
+        t = 1.
+        iterate = out.clone()
+
+        # Computing step and product
+        step = 1. / self.lipschitz
+
+        for i in range(self.max_iter):
+            if self.alpha is None:
+                dico = self.D
+            else:
+                dico = self.D * self.window
+            # Keep last iterate for FISTA
+            iterate_old = iterate.clone()
+
+            # Gradient descent
+            rec = self.convt(self.convt(out, dico), self.kernel)
+            diff = self.conv(rec - y, self.kernel)
+            gradient = self.conv(diff, dico)
+            out = out - step * gradient
+
+            # Thresholding
+            thresh = torch.abs(out) - step * self.lambd
+            out = F.relu(thresh)
+
+            iterate = out.clone()
+            # Apply momentum for FISTA
+            if self.algo == "fista":
+                t_new = 0.5 * (1 + np.sqrt(1 + 4 * t * t))
+                out = iterate + ((t - 1.) / t_new) * (iterate - iterate_old)
+                t = t_new
+
+        return out
+
+    def fit(self, Y, kernel):
+        """
+        Training procedure.
+
+        Parameters
+        ----------
+        Y : numpy.array, shape (batch_size, im_height, im_weight)
+            Observations to be processed
+        kernel : numpy.array, shape (kernel_height, kernel_width)
+            Convolutional kernel
+
+        Returns
+        -------
+        loss : float
+            Final value of the loss after training
+        """
+        # Kernel
+        self.kernel = torch.from_numpy(kernel).float().to(self.device)
+        self.kernel = self.kernel[None, None, :, :]
+
+        # Dictionary
+        if self.init_D is None:
+            if self.rng is None:
+                self.rng = np.random.get_default_rng()
+            dico = self.rng.normal(
+                size=(self.n_components, 1, self.atom_height, self.atom_width)
+            )
+            self.D = nn.Parameter(
+                torch.tensor(dico, device=self.device, dtype=torch.float)
+            )
+        else:
+            dico_tensor = torch.from_numpy(
+                self.init_D).float().to(self.device)
+            self.D = nn.Parameter(dico_tensor)
+
+        # Scaling and computing lipschitz
+        self.rescale()
+        self.compute_lipschitz()
+
+        # Data
+        self.Y_tensor = torch.from_numpy(Y).float().to(self.device)
+
+        # Training
+        loss = self.training_process()
+        return loss

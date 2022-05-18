@@ -12,9 +12,9 @@ RNG = np.random.default_rng(2022)
 n_atoms = 100
 dim_atom = 10
 
-sizes = np.arange(100, 501, 100)
+sizes = np.arange(100, 801, 100)
 n_sizes = sizes.shape[0]
-s_values = np.linspace(0, 0.5, 6)
+s_values = np.array([0, 0.1, 0.3, 0.4, 0.5])
 n_s = s_values.shape[0]
 lambds = [0.1, 0.2, 0.3]
 scores = np.zeros((N_EXP, n_s, n_sizes))
@@ -44,7 +44,8 @@ for exp in tqdm(range(N_EXP)):
                     atom_height=dim_atom,
                     atom_width=dim_atom,
                     device=DEVICE,
-                    rng=RNG
+                    rng=RNG,
+                    alpha=0.1
                 )
                 dl.fit(y_inpainting[None, :, :], mask)
                 D = dl.D_.squeeze()

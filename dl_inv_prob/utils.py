@@ -324,3 +324,26 @@ def rec_score_digits(D, D_ref):
     score = scores.mean()
 
     return score
+
+
+def gaussian_kernel(dim, sigma):
+    """Generate a 2D gaussian kernel of given size and standard deviation.
+
+    Parameters
+    ----------
+    dim : int
+        Kernel size
+    sigma : float
+        Kernel standard deviation
+
+    Returns
+    -------
+    kernel : numpy.array, shape (dim, dim)
+        Gaussian kernel of size dim*dim
+    """
+    t = np.linspace(-1, 1, dim)
+    gaussian = np.exp(-0.5 * (t / sigma) ** 2)
+    kernel = gaussian[None, :] * gaussian[:, None]
+    kernel /= kernel.sum()
+
+    return kernel

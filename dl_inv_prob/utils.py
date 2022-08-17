@@ -1,7 +1,10 @@
 import numpy as np
+from PIL import Image
 from scipy.optimize import linear_sum_assignment
 from scipy.signal import correlate2d
 from sklearn.datasets import load_digits
+import torch
+import torchvision.transforms as T
 
 
 def generate_dico(n_components, dim_signal, rng=None):
@@ -26,7 +29,7 @@ def generate_dico(n_components, dim_signal, rng=None):
         D = np.random.normal(size=(dim_signal, n_components))
     else:
         D = rng.normal(size=(dim_signal, n_components))
-    D /= np.sqrt(np.sum(D ** 2, axis=0))
+    D /= np.sqrt(np.sum(D**2, axis=0))
     return D
 
 
@@ -55,7 +58,7 @@ def generate_data(D, N, s=0.1, rng=None):
     n_components = D.shape[2]
     n_dicos = D.shape[0]
     if rng is None:
-        X = (np.random.random((n_dicos, n_components, N)) > (1 - s))
+        X = np.random.random((n_dicos, n_components, N)) > (1 - s)
         X = X.astype(float)
         X *= np.random.normal(scale=1, size=(n_dicos, n_components, N))
     else:
@@ -140,7 +143,7 @@ def extract_patches(img, dim_patch):
     i_patch = 0
     for i in range(0, dim_img, dim_patch):
         for j in range(0, dim_img, dim_patch):
-            res[i_patch, :, :] = img[i:i + dim_patch, j:j + dim_patch]
+            res[i_patch, :, :] = img[i : i + dim_patch, j : j + dim_patch]
             i_patch += 1
     patches = np.array(res)
 
@@ -164,8 +167,10 @@ def combine_patches(patches):
     n_patches = patches.shape[0]
     dim_grid = int(np.sqrt(n_patches))
 
-    rows = [np.hstack([patches[i] for i in range(k, k + dim_grid)])
-            for k in range(0, n_patches, dim_grid)]
+    rows = [
+        np.hstack([patches[i] for i in range(k, k + dim_grid)])
+        for k in range(0, n_patches, dim_grid)
+    ]
     img = np.vstack(rows)
 
     return img
@@ -219,9 +224,11 @@ def create_patches_overlap(im, m, A=None):
     for i in range(r):
         for j in range(c):
             if i + m <= r and j + m <= c:
-                patches.append((im[i:i + m, j:j + m]).reshape(m * m, 1))
+                patches.append((im[i : i + m, j : j + m]).reshape(m * m, 1))
                 if A is not None:
-                    patches_a.append((A[i:i + m, j:j + m]).reshape(m * m, 1))
+                    patches_a.append(
+                        (A[i : i + m, j : j + m]).reshape(m * m, 1)
+                    )
     result_y = np.concatenate(patches, axis=1).T
     if A is not None:
         masks = np.concatenate(patches_a, axis=1).T
@@ -256,8 +263,8 @@ def patch_average(patches, m, r, c):
     for i in range(r):
         for j in range(c):
             if i + m <= r and j + m <= c:
-                im[i:i + m, j:j + m] += patches[cpt, :].reshape(m, m)
-                avg[i:i + m, j:j + m] += np.ones((m, m))
+                im[i : i + m, j : j + m] += patches[cpt, :].reshape(m, m)
+                avg[i : i + m, j : j + m] += np.ones((m, m))
                 cpt += 1
     im = im / avg
 
@@ -347,3 +354,20 @@ def gaussian_kernel(dim, sigma):
     kernel /= kernel.sum()
 
     return kernel
+
+
+def determinist_inpainting(
+    img_path, prop, sigma, dtype=torch.float32, device="cpu"
+):
+    """Apply deterministic inpainting to an image."""
+    seed = hash(img_path)
+    img = Image.open(img_path).convert("L")
+    img = T.ToTensor()(img).to(device)
+    rng = torch.Generator(device=device)
+    rng.manual_seed(seed)
+    mask = (
+        torch.rand(img.shape, generator=rng, dtype=dtype, device=device) > prop
+    )
+    noise = torch.randn(img.shape, generator=rng, dtype=dtype, device=device)
+
+    return img * mask + sigma * noise, mask

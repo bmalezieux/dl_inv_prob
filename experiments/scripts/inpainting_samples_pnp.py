@@ -17,6 +17,7 @@ import numpy as np
 import os
 import pandas as pd
 from PIL import Image
+import random
 import time
 import torch
 import torch.optim
@@ -24,7 +25,7 @@ import torch.nn as nn
 
 start_time = time.time()
 
-DEVICE = "cuda:2"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.float32
 TRAINING = True
 
@@ -41,11 +42,11 @@ N_EPOCHS = 100
 BATCH_SIZE = 32
 VAL_BATCH_SIZE = 32
 LR = 0.001  # Learning rate to train the denoiser
-N_SAMPLES = [100, 400]  # Training samples
+N_SAMPLES = 20 * np.arange(1, 6)  # Training samples
 SIGMA_MAX_DENOISER = 0.3  # Max noise level to train the denoiser
 SIGMA_TRAIN_SAMPLE = 0.0  # Noise level of "clean" training samples
 SIGMA_TEST_SAMPLE = 0.1  # Noise level of the corrupted test image
-PROP = [0.1, 0.5]  # Proportion of missing pixels (during training and testing)
+PROP = 0.1 * np.arange(1, 6)  # Proportion of missing pixels
 
 # PnP hyperparameters
 STEP = 1.0  # Step size of PnP
@@ -63,6 +64,9 @@ os.environ["PYTHONHASHSEED"] = str(SEED)
 torch.backends.cudnn.benchmark = False
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.enabled = True
+torch.use_deterministic_algorithms(True)
+np.random.seed(SEED)
+random.seed(SEED)
 
 # Load test image
 img = Image.open(IMG_PATH)
@@ -133,6 +137,7 @@ for i_prop, prop in enumerate(PROP):
                     val_split_fraction=0.1,
                     np_rng=NP_RNG,
                     seed=SEED,
+                    num_workers=0,
                 )
 
                 denoiser = DnCNN().to(DEVICE).type(DTYPE)
@@ -170,12 +175,13 @@ for i_prop, prop in enumerate(PROP):
                 for iter in range(1, N_ITER + 1):
                     grad = mask * (out - corrupted_img)
                     out -= STEP * grad
-                    out = denoiser(out)
+                    out = torch.clip(denoiser(out), 0, 1)
                     loss = mse(out * mask, corrupted_img)
                     if iter % 10 == 0:
                         print(f"Iteration {iter}, loss = {loss.item()}")
 
             out_np = torch_to_np(out)
+            print()
 
             # Store PSNR
             psnr_rec = psnr(out_np, img_np)
@@ -196,6 +202,8 @@ results_df = {
     "psnrs_rec": {"psnrs_rec": psnrs_rec},
     "psnrs_rec_ref": {"psnrs_rec_ref": psnrs_rec_ref},
     "psnrs_corrupted": {"psnrs_corrupted": psnrs_corrupted},
+    "n_samples": {"n_samples": N_SAMPLES},
+    "props": {"props": PROP},
 }
 results_df = pd.DataFrame(results_df)
 results_df.to_pickle("experiments/results/inpainting_samples_pnp.pickle")

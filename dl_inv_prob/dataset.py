@@ -2,6 +2,7 @@ from .utils import determinist_inpainting
 import numpy as np
 import os
 from PIL import Image
+import random
 import torch
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import SubsetRandomSampler
@@ -11,14 +12,12 @@ import torchvision.transforms as T
 def make_dataset(path, n_samples=None):
     """Return a list of image paths."""
     images = []
-    n_data = 1
     for img in os.listdir(path):
-        if n_samples is not None and n_data > n_samples:
+        if n_samples is not None and len(images) >= n_samples:
             break
         if img.endswith(".png"):
             img_path = os.path.join(path, img)
             images.append(img_path)
-            n_data += 1
 
     return images
 
@@ -90,7 +89,7 @@ class DenoisingInpaintingDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path = self.images[idx]
-        clean, mask = determinist_inpainting(
+        original, mask = determinist_inpainting(
             img_path=img_path,
             prop=self.prop,
             sigma=self.sigma,
@@ -98,7 +97,7 @@ class DenoisingInpaintingDataset(Dataset):
             device=self.device,
         )
         noise = torch.randn(
-            clean.shape,
+            original.shape,
             generator=self.rng,
             dtype=self.dtype,
             device=self.device,
@@ -109,16 +108,16 @@ class DenoisingInpaintingDataset(Dataset):
             )
             * self.noise_std
         )
-        noisy = clean + random_sigma * noise
+        noisy = original + random_sigma * noise
 
-        return noisy, clean, mask
+        return noisy, original, mask
 
 
 class SimpleDataset(Dataset):
     """Dataset from a directory of images."""
 
-    def __init__(self, path):
-        self.images = make_dataset(path)
+    def __init__(self, path, n_samples=None):
+        self.images = make_dataset(path, n_samples)
 
     def __len__(self):
         return len(self.images)
@@ -130,6 +129,12 @@ class SimpleDataset(Dataset):
         return img
 
 
+def seed_worker(worker_id):
+    worker_seed = torch.initial_seed() % 2**32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+
+
 def train_val_dataloaders(
     dataset,
     train_batch_size=128,
@@ -137,7 +142,7 @@ def train_val_dataloaders(
     val_split_fraction=0.1,
     seed=None,
     np_rng=None,
-    n_workers=0,
+    num_workers=0,
 ):
     """Return training and validation dataloaders."""
     indices = list(range(len(dataset)))
@@ -159,14 +164,16 @@ def train_val_dataloaders(
         batch_size=train_batch_size,
         sampler=train_sampler,
         generator=rng,
-        num_workers=n_workers,
+        num_workers=num_workers,
+        worker_init_fn=seed_worker,
     )
     val_dataloader = DataLoader(
         dataset,
         batch_size=val_batch_size,
         sampler=val_sampler,
         generator=rng,
-        num_workers=n_workers,
+        num_workers=num_workers,
+        worker_init_fn=seed_worker,
     )
 
     return train_dataloader, val_dataloader

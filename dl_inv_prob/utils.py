@@ -1,3 +1,4 @@
+import hashlib
 import numpy as np
 from PIL import Image
 from scipy.optimize import linear_sum_assignment
@@ -22,7 +23,7 @@ def generate_dico(n_components, dim_signal, rng=None):
 
     Returns
     -------
-    numpy.array (dim_signal, n_components)
+    ndarray, shape (dim_signal, n_components)
         Generated dictionary
     """
     if rng is None:
@@ -39,7 +40,7 @@ def generate_data(D, N, s=0.1, rng=None):
 
     Parameters
     ----------
-    D : numpy.array (n_dicos, dim_signal, n_components)
+    D : ndarray, shape (n_dicos, dim_signal, n_components)
         Dictionary
     N : int
         number of samples per dictionary
@@ -50,9 +51,9 @@ def generate_data(D, N, s=0.1, rng=None):
 
     Returns
     -------
-    signal : numpy.array, shape (n_dicos, dim_signal, N)
+    signal : ndarray, shape (n_dicos, dim_signal, N)
         Generated signal
-    X : numpy.array, shape (n_dicos, n_components, N)
+    X : ndarray, shape (n_dicos, n_components, N)
         Generated sparse codes
     """
     n_components = D.shape[2]
@@ -75,9 +76,9 @@ def recovery_score(D, D_ref):
 
     Parameters
     ----------
-    D : numpy.array, shape (dim_signal, n_components)
+    D : ndarray, shape (dim_signal, n_components)
         Dictionary
-    Dref : numpy.array, shape (dim_signal, n_components)
+    Dref : ndarray, shape (dim_signal, n_components)
         Reference dictionary
 
     Returns
@@ -98,9 +99,9 @@ def conv_recovery_score(D, D_ref):
 
     Parameters
     ----------
-    D : numpy.array, shape (n_atoms, atom_height, atom_width)
+    D : ndarray, shape (n_atoms, atom_height, atom_width)
         Dictionary
-    D_ref : numpy.array, shape (n_atoms, atom_height, atom_width)
+    D_ref : ndarray, shape (n_atoms, atom_height, atom_width)
         Reference dictionary
 
     Returns
@@ -127,14 +128,14 @@ def extract_patches(img, dim_patch):
 
     Parameters
     ----------
-    img : numpy.array, shape (dim_img, dim_img)
+    img : ndarray, shape (dim_img, dim_img)
         Square image with a single channel
     dim_patch : int
         Dimension of the square patches to extract
 
     Returns
     -------
-    patches : numpy.array, shape (nb_patches, dim_patch, dim_patch)
+    patches : ndarray, shape (nb_patches, dim_patch, dim_patch)
         3d array containg the extracted patches
     """
     dim_img = img.shape[0]
@@ -156,12 +157,12 @@ def combine_patches(patches):
 
     Parameters
     ----------
-    patches : numpy.array, shape (nb_patches, dim_patch, dim_patch)
+    patches : ndarray, shape (nb_patches, dim_patch, dim_patch)
         3d array containing the extracted patches
 
     Returns
     -------
-    img : numpy.array, shape (dim_img, dim_img)
+    img : ndarray, shape (dim_img, dim_img)
         original image
     """
     n_patches = patches.shape[0]
@@ -182,9 +183,9 @@ def psnr(rec, ref):
 
     Parameters
     ----------
-    rec : numpy.array, shape (height, width)
+    rec : ndarray, shape (height, width)
         reconstructed image
-    ref : numpy.array, shape (height, width)
+    ref : ndarray, shape (height, width)
         original image
 
     Returns
@@ -204,18 +205,18 @@ def create_patches_overlap(im, m, A=None):
 
     Parameters
     ----------
-    im : numpy.array, shape (height, width)
+    im : ndarray, shape (height, width)
         Input image
     m : int
         Patch dimension
-    A : numpy.array, shape (height, width), optional (default None)
+    A : ndarray, shape (height, width), optional (default None)
         Image mask
 
     Returns
     -------
-    result_y : numpy.array, shape (n_patches, m ** 2)
+    result_y : ndarray, shape (n_patches, m ** 2)
         Array of flattened patches
-    masks : numpy.array, shape (n_patches, m ** 2)
+    masks : ndarray, shape (n_patches, m ** 2)
         Array of flattened partial masks
     """
     r, c = im.shape
@@ -243,7 +244,7 @@ def patch_average(patches, m, r, c):
 
     Parameters
     ----------
-    patches : numpy.array, shape (n_patches, m ** 2)
+    patches : ndarray, shape (n_patches, m ** 2)
         Array of flattened patches
     m : int
         Patch dimension
@@ -254,7 +255,7 @@ def patch_average(patches, m, r, c):
 
     Returns
     -------
-    im : numpy.array, shape (height, width)
+    im : ndarray, shape (height, width)
         Output image
     """
     im = np.zeros((r, c))
@@ -288,7 +289,7 @@ def create_image_digits(width, height, k=0.1, rng=None):
 
     Returns
     -------
-    image : numpy.array, shape (height, width)
+    image : ndarray, shape (height, width)
         Generated image with values in [0, 1]
     """
     digits = load_digits()
@@ -312,9 +313,9 @@ def rec_score_digits(D, D_ref):
 
     Parameters
     ----------
-    D : numpy.array, shape (n_atoms, atom_height, atom_width)
+    D : ndarray, shape (n_atoms, atom_height, atom_width)
         Convolutional dictionary
-    D_ref : numpy.array, shape (n_atoms, ref_atom_height, ref_atom_width)
+    D_ref : ndarray, shape (n_atoms, ref_atom_height, ref_atom_width)
         Reference convolutional dictionary
 
     Returns
@@ -345,7 +346,7 @@ def gaussian_kernel(dim, sigma):
 
     Returns
     -------
-    kernel : numpy.array, shape (dim, dim)
+    kernel : ndarray, shape (dim, dim)
         Gaussian kernel of size dim*dim
     """
     t = np.linspace(-1, 1, dim)
@@ -360,7 +361,8 @@ def determinist_inpainting(
     img_path, prop, sigma, dtype=torch.float32, device="cpu"
 ):
     """Apply deterministic inpainting to an image."""
-    seed = hash(img_path)
+    hash = hashlib.md5(bytes(img_path, "utf-8")).hexdigest()
+    seed = int(hash[:8], 16)
     img = Image.open(img_path).convert("L")
     img = T.ToTensor()(img).to(device)
     rng = torch.Generator(device=device)

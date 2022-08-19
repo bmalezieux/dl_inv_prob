@@ -433,9 +433,14 @@ class DictionaryLearning(nn.Module):
         loss = self.training_process()
         return loss
 
-    def rec(self):
+    def rec(self, Y):
         """
         Reconstruct the signal with one forward pass from the data.
+
+        Parameters
+        ----------
+        Y : np.array, shape (n_matrices, dim_y, data_size)
+            Observations to be processed.
 
         Returns
         -------
@@ -443,7 +448,8 @@ class DictionaryLearning(nn.Module):
             Reconstructed signal
         """
         with torch.no_grad():
-            x = self.forward(self.Y_tensor)
+            Y_tensor = torch.from_numpy(Y).float().to(self.device)
+            x = self.forward(Y_tensor)
             rec = torch.matmul(self.D, x)
 
         return rec.detach().to("cpu").numpy()
@@ -476,14 +482,14 @@ class Inpainting(DictionaryLearning):
             device=device,
         )
 
-        self.mask = None
+        self.masks = None
 
     def compute_lipschitz(self):
         """
         Computes an upper bound of the Lipschitz constant of the dictionary.
         """
         with torch.no_grad():
-            product = self.mask[:, :, None] * self.D
+            product = self.masks * self.D
             self.lipschitz = (
                 torch.norm(
                     torch.matmul(product.transpose(1, 2), product), dim=(1, 2)
@@ -510,7 +516,7 @@ class Inpainting(DictionaryLearning):
         cost : float
             Cost value
         """
-        product = self.mask[:, :, None] * self.D
+        product = self.masks * self.D
 
         res = torch.matmul(product, x) - y
         l2 = (res * res).sum()
@@ -544,7 +550,7 @@ class Inpainting(DictionaryLearning):
 
         # Computing step and product
         step = 1.0 / self.lipschitz
-        product = self.mask[:, :, None] * self.D
+        product = self.masks * self.D
 
         for i in range(self.max_iter):
             # Keep last iterate for FISTA
@@ -569,17 +575,17 @@ class Inpainting(DictionaryLearning):
 
         return out
 
-    def fit(self, Y, mask, cov_inv=None):
+    def fit(self, Y, masks, cov_inv=None):
         """
         Training procedure.
 
         Parameters
         ----------
-        Y : numpy.array, shape (n_matrices, dim_y, data_size)
+        Y : ndarray, shape (n_matrices, dim_y, data_size)
             Observations to be processed
-        mask : numpy.array, shape (n_matrices, dim_y)
+        masks : ndarray, shape (n_matrices, dim_y)
             Diagonal masks
-        cov_inv : numpy.array, shape (dim_signal, dim_signal)
+        cov_inv : ndarray, shape (dim_signal, dim_signal)
             Inverse of covariance A.T @ A
 
         Returns
@@ -591,9 +597,9 @@ class Inpainting(DictionaryLearning):
         self.dim_y = Y.shape[1]
         self.dim_signal = Y.shape[1]
 
-        # Mask
-        self.mask = torch.from_numpy(mask).float().to(self.device)
-        self.n_matrices = self.mask.shape[0]
+        # masks
+        self.masks = torch.from_numpy(masks).float().to(self.device)
+        self.n_matrices = self.masks.shape[0]
 
         # Covariance
         if cov_inv is None:
@@ -657,7 +663,7 @@ class ConvolutionalInpainting(DictionaryLearning):
             device=device,
         )
 
-        self.mask = None
+        self.masks = None
         self.conv = F.conv2d
         self.convt = F.conv_transpose2d
         self.atom_height = atom_height
@@ -745,7 +751,7 @@ class ConvolutionalInpainting(DictionaryLearning):
         else:
             dico = self.D * self.window
         rec = self.convt(x, dico)
-        diff = self.mask[None, :, :] * rec - y
+        diff = self.masks * rec - y
         l2 = diff.ravel() @ diff.ravel()
         l1 = torch.sum(torch.abs(x))
         cost = 0.5 * l2 + self.lambd * l1
@@ -796,7 +802,15 @@ class ConvolutionalInpainting(DictionaryLearning):
 
             # Gradient descent
             rec = self.convt(out, dico)
-            diff = self.mask[None, :, :] * (rec - y)
+            diff = self.masks[:, None, :, :] * (rec - y[:, None, :, :])
+            # print(
+            #     rec.shape,
+            #     y.shape,
+            #     self.masks.shape,
+            #     diff.shape,
+            #     dico.shape,
+            #     out.shape,
+            # )
             gradient = self.conv(diff, dico)
             out = out - step * gradient
 
@@ -868,24 +882,24 @@ class ConvolutionalInpainting(DictionaryLearning):
 
         return loss.item()
 
-    def fit(self, Y, mask):
+    def fit(self, Y, masks):
         """
         Training procedure.
 
         Parameters
         ----------
-        Y : numpy.array, shape (batch_size, im_height, im_weight)
+        Y : ndarray, shape (batch_size, im_height, im_weight)
             Observations to be processed
-        mask : numpy.array, shape (im_height, im_width)
-            Image mask
+        masks : ndarray, shape (batch_size, im_height, im_width)
+            Image masks
 
         Returns
         -------
         loss : float
             Final value of the loss after training
         """
-        # Mask
-        self.mask = torch.from_numpy(mask).float().to(self.device)
+        # masks
+        self.masks = torch.from_numpy(masks).float().to(self.device)
 
         # Dictionary
         if self.init_D is None:
@@ -912,20 +926,24 @@ class ConvolutionalInpainting(DictionaryLearning):
         loss = self.training_process()
         return loss
 
-    def rec(self):
+    def rec(self, Y):
         """
         Reconstruct the image with the learned atoms and sparse codes.
+
+        Parameters
+        ----------
+        Y : torch.Tensor, shape (batch_size, im_height, im_weight)
+            Data to be reconstructed
 
         Returns
         -------
         rec : torch.Tensor, shape (batch_size, im_height, im_width)
             Reconstructed image
         """
-        # im_height = self.Y_tensor.shape[1] - self.kernel.shape[2] + 1
-        # im_width = self.Y_tensor.shape[2] - self.kernel.shape[3] + 1
         with torch.no_grad():
-            x = self.forward(self.Y_tensor)
-            rec = self.convt(x, self.D)  # .reshape((im_height, im_width))
+            Y_tensor = torch.from_numpy(Y).float().to(self.device)
+            x = self.forward(Y_tensor)
+            rec = self.convt(x, self.D)
 
         return rec.detach().to("cpu").numpy()
 
@@ -1099,9 +1117,9 @@ class Deconvolution(ConvolutionalInpainting):
 
         Parameters
         ----------
-        Y : numpy.array, shape (batch_size, im_height, im_weight)
+        Y : ndarray, shape (batch_size, im_height, im_weight)
             Observations to be processed
-        kernel : numpy.array, shape (kernel_height, kernel_width)
+        kernel : ndarray, shape (kernel_height, kernel_width)
             Convolutional kernel
 
         Returns

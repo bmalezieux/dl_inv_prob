@@ -358,12 +358,14 @@ def gaussian_kernel(dim, sigma):
 
 
 def determinist_inpainting(
-    img_path, prop, sigma, dtype=torch.float32, device="cpu"
+    img_path, prop, sigma, size=None, dtype=torch.float32, device="cpu"
 ):
     """Apply deterministic inpainting to an image."""
     hash = hashlib.md5(bytes(img_path, "utf-8")).hexdigest()
     seed = int(hash[:8], 16)
     img = Image.open(img_path).convert("L")
+    if img is not None:
+        img = img.resize((size, size), Image.ANTIALIAS)
     img = T.ToTensor()(img).to(device)
     rng = torch.Generator(device=device)
     rng.manual_seed(seed)
@@ -372,4 +374,4 @@ def determinist_inpainting(
     )
     noise = torch.randn(img.shape, generator=rng, dtype=dtype, device=device)
 
-    return img * mask + sigma * noise, mask
+    return img, mask * (img + sigma * noise), mask

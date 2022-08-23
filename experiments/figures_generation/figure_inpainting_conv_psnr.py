@@ -5,14 +5,12 @@ import pandas as pd
 
 # plt.style.use('figures_style_small.mplstyle')
 
-df = pd.read_pickle('../results/inpainting_patches.pickle')
+df = pd.read_pickle('../results/inpainting_conv.pickle')
 psnrs = df.psnrs.psnrs
-psnrs_patch_init = df.psnrs_patch_init.psnrs_patch_init
 psnrs_corrupted = df.psnrs_corrupted.psnrs_corrupted
-psnrs_overlap = df.psnrs_overlap.psnrs_overlap
 s_values = df.s_values.s_values
-quantities = [psnrs, psnrs_patch_init, psnrs_corrupted, psnrs_overlap]
-labels = ['random init', 'patch init', 'corrupted image', 'overlap']
+quantities = [psnrs, psnrs_corrupted]
+labels = ['reconstruction', 'corrupted image']
 
 fig = plt.figure()
 
@@ -29,4 +27,5 @@ plt.xlim([0, 1])
 plt.xlabel("Proportion of missing values")
 plt.ylabel("PSNR (dB)")
 plt.legend()
-plt.savefig("../figures/inpainting_patches_psnr.pdf")
+plt.title('Convolutional inpainting')
+plt.savefig("../figures/inpainting_conv_psnr.pdf")

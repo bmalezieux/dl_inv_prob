@@ -373,5 +373,6 @@ def determinist_inpainting(
         torch.rand(img.shape, generator=rng, dtype=dtype, device=device) > prop
     )
     noise = torch.randn(img.shape, generator=rng, dtype=dtype, device=device)
+    img_corr = torch.clip(mask * (img + sigma * noise), 0, 1)
 
-    return img, mask * (img + sigma * noise), mask
+    return img, img_corr, mask

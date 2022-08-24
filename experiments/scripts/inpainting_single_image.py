@@ -55,13 +55,13 @@ mem = Memory(location="./tmp_inpainting/", verbose=0)
 
 SOLVERS = {
     "CDL": ConvolutionalInpainting,
-    "TV": ProxTV,
-    "Wavelets": SparseWavelets,
-    "DIP": DIPInpainting,
+    # "TV": ProxTV,
+    # "Wavelets": SparseWavelets,
+    # "DIP": DIPInpainting,
 }
 
 #########################
-# Parameters generation #
+# Parameters extraction #
 #########################
 
 
@@ -81,7 +81,7 @@ def extract_params(params):
 
     if solver_name == "CDL":
         params_solver["lambd"] = params["lambd"]
-        params_solver["prop_atom"] = params["prop_atom"]
+        params_solver["dim_atoms"] = params["dim_atoms"]
         params_solver["n_atoms"] = params["n_atoms"]
 
     elif solver_name == "TV":
@@ -110,28 +110,20 @@ def extract_params(params):
 #####################
 
 
-def concatenate_lists(lists):
-    """
-    Concatenate lists of lists.
-    """
-
-    return list(itertools.chain.from_iterable(lists))
-
-
 def generate_algo(params):
     """
-    Initiate an algorithm from a solver and its parameters.
+    Initiate an algorithm from parameters.
     """
 
     solver_name = params["name"]
 
     if solver_name == "CDL":
-        dim_atom = int(params["size"] * params["prop_atom"])
+        dim_atoms = params["dim_atoms"]
         solver = SOLVERS[solver_name](
             n_components=params["n_atoms"],
             lambd=params["lambd"],
-            atom_height=dim_atom,
-            atom_width=dim_atom,
+            atom_height=dim_atoms,
+            atom_width=dim_atoms,
             device=DEVICE,
             rng=NP_RNG,
         )
@@ -208,8 +200,8 @@ def run_test(params):
     if solver_name == "CDL":
         n_atoms = params["n_atoms"]
         lambd = params["lambd"]
-        prop_atom = params["prop_atom"]
-        print(f"lambd = {lambd}, n_atoms = {n_atoms}, prop_atom = {prop_atom}")
+        dim_atoms = params["dim_atoms"]
+        print(f"lambd = {lambd}, n_atoms = {n_atoms}, dim_atoms = {dim_atoms}")
     elif solver_name == "TV":
         n_iter = params["n_iter"]
         lambd = params["lambd"]
@@ -250,13 +242,13 @@ def run_test(params):
 if __name__ == "__main__":
 
     hyperparams = {
-        "size": [128],
-        "sigma": [0.0, 0.01, 0.05, 0.1],
+        "size": [256, 128],
+        "sigma": [0.0, 0.02, 0.05, 0.1],
         "rho": np.arange(0.1, 1.1, 0.1),
         "name": SOLVERS.keys(),
-        "lambd": [0.01, 0.1, 0.5],
-        "prop_atom": [0.1],
         "n_atoms": [50],
+        "lambd": [0.01, 0.05, 0.1],
+        "dim_atoms": [10],
         "n_iter": [1000],
         "wavelet": ["db3"],
         "step": [1.0],

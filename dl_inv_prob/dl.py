@@ -926,7 +926,7 @@ class ConvolutionalInpainting(DictionaryLearning):
         loss = self.training_process()
         return loss
 
-    def rec(self, Y):
+    def rec(self, Y=None):
         """
         Reconstruct the image with the learned atoms and sparse codes.
 
@@ -941,7 +941,10 @@ class ConvolutionalInpainting(DictionaryLearning):
             Reconstructed image
         """
         with torch.no_grad():
-            Y_tensor = torch.from_numpy(Y).float().to(self.device)
+            if Y is None:
+                Y_tensor = self.Y_tensor
+            else:
+                Y_tensor = torch.from_numpy(Y).float().to(self.device)
             x = self.forward(Y_tensor)
             rec = self.convt(x, self.D)
 

@@ -11,7 +11,6 @@ from tqdm import tqdm
 
 SEED = 2022
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-RNG = np.random.default_rng(SEED)
 
 mem = Memory(location="./tmp_cdl_digits/", verbose=0)
 
@@ -19,28 +18,23 @@ mem = Memory(location="./tmp_cdl_digits/", verbose=0)
 D_ref = load_digits().images[:10]
 D_ref /= np.linalg.norm(D_ref, axis=(1, 2), keepdims=True)
 
-# Fix dimensions
-N_ATOMS = 50
-DIM_ATOM = 10
-
-# Fix initialization
-D_init = RNG.normal(size=(N_ATOMS, 1, DIM_ATOM, DIM_ATOM))
-
 
 @mem.cache
-def run_test(params):
+def run_test(params, random_seed):
 
     rho = params["rho"]
     sigma = params["sigma"]
     lambd = params["lambda"]
     size = params["size"]
-    n_atoms = N_ATOMS
-    dim_atom = DIM_ATOM
+    n_atoms = params["n_atoms"]
+    dim_atom = params["dim_atom"]
+    rng = np.random.default_rng(random_seed)
 
-    y = create_image_digits(size, size, k=0.1, rng=RNG)
-    mask = RNG.binomial(1, rho, y.shape)
+    y = create_image_digits(size, size, k=0.1, rng=rng)
+    mask = rng.binomial(1, rho, y.shape)
+    D_init = rng.normal(size=(n_atoms, 1, dim_atom, dim_atom))
     # Corrupt the image
-    y_inpainting = y * mask + sigma * RNG.normal(size=y.shape)
+    y_inpainting = y * mask + sigma * rng.normal(size=y.shape)
 
     dl = ConvolutionalInpainting(
         n_atoms,
@@ -49,7 +43,7 @@ def run_test(params):
         atom_height=dim_atom,
         atom_width=dim_atom,
         device=DEVICE,
-        rng=RNG,
+        rng=rng,
         alpha=0.1,
     )
     # Perform inpainting with CDL
@@ -70,7 +64,9 @@ if __name__ == "__main__":
         "size": [256, 128],
         "sigma": np.arange(100, 801, 100),
         "rho": np.arange(0.1, 1.1, 0.1),
-        "lambda": [0.1, 1.]
+        "lambda": [0.1, 1.],
+        "n_atoms": [50],
+        "dim_atom": [10]
     }
 
     keys, values = zip(*hyperparams.items())
@@ -80,7 +76,7 @@ if __name__ == "__main__":
 
     for params in tqdm(permuts_params):
         try:
-            results = run_test(params)
+            results = run_test(params, SEED)
 
             # Storing results
 

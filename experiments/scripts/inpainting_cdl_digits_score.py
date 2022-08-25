@@ -61,9 +61,9 @@ def run_test(params, random_seed):
 if __name__ == "__main__":
 
     hyperparams = {
-        "size": [256, 128],
-        "sigma": np.arange(100, 801, 100),
-        "rho": np.arange(0.1, 1.1, 0.1),
+        "size": np.arange(100, 501, 100),
+        "sigma": [0., 0.05],
+        "rho": [0.3, 0.5, 0.7, 0.9],
         "lambda": [0.1, 1.],
         "n_atoms": [50],
         "dim_atom": [10]

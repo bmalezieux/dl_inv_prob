@@ -98,5 +98,5 @@ if __name__ == "__main__":
 
     results_df = pd.DataFrame(dict_results)
     results_df.to_csv(
-        "experiments/results/inpainting_cdl_digits_score.csv"
+        "../results/inpainting_cdl_digits_score.csv"
     )

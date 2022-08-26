@@ -28,7 +28,7 @@ DATA = os.path.join(EXPERIMENTS, "data")
 IMG = os.path.join(DATA, "flowers.png")
 RESULTS = os.path.join(EXPERIMENTS, "results")
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-RESULT_FILE = "inpainting_single_image.parquet"
+RESULT_FILE = "inpainting_single_image_tv.csv"
 
 # Reproducibility
 SEED = 2022
@@ -54,8 +54,8 @@ mem = Memory(location="./tmp_inpainting/", verbose=0)
 
 
 SOLVERS = {
-    "CDL": ConvolutionalInpainting,
-    # "TV": ProxTV,
+    # "CDL": ConvolutionalInpainting,
+    "TV": ProxTV,
     # "Wavelets": SparseWavelets,
     # "DIP": DIPInpainting,
 }
@@ -242,12 +242,12 @@ def run_test(params):
 if __name__ == "__main__":
 
     hyperparams = {
-        "size": [256, 128],
-        "sigma": [0.0, 0.02, 0.05, 0.1],
-        "rho": np.arange(0.1, 1.1, 0.1),
+        "size": [256],
+        "sigma": [0.1],
+        "rho": np.arange(0.1, 1.0, 0.2),
         "name": SOLVERS.keys(),
         "n_atoms": [50],
-        "lambd": [0.01, 0.05, 0.1],
+        "lambd": [0.01, 0.05, 0.1, 0.5, 1.0],
         "dim_atoms": [10],
         "n_iter": [1000],
         "wavelet": ["db3"],
@@ -289,4 +289,4 @@ if __name__ == "__main__":
 
     # Data Frame
     results = pd.DataFrame(dict_results)
-    results.to_parquet(os.path.join(RESULTS, RESULT_FILE))
+    results.to_csv(os.path.join(RESULTS, RESULT_FILE))

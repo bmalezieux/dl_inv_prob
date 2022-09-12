@@ -2,7 +2,7 @@ from dl_inv_prob.common_utils import (
     np_to_torch,
     torch_to_np,
 )
-from dl_inv_prob.models.skip_wip import SkipNet
+from dl_inv_prob.models.skip import SkipNet
 from dl_inv_prob.utils import psnr
 import numpy as np
 import torch

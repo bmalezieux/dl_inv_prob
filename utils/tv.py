@@ -34,9 +34,9 @@ class ProxTV:
         return p / np.maximum(1, np.abs(p) / self.lambd)
 
     def fit(self, y, A=None):
-        self.y = y[0, :, :]
+        self.y = y.squeeze()
         if A is not None:
-            self.A = A[0, :, :]
+            self.A = A.squeeze()
         else:
             self.A = (y != 0).astype(float)
         tau = 0.1

@@ -46,8 +46,8 @@ class SparseWavelets:
 
     def fit(self, y, A):
         """Reconstruction process using (F)ISTA"""
-        y = y[0, :, :]
-        A = A[0, :, :]
+        y = y.squeeze()
+        A = A.squeeze()
         t = 1.0
         out = self.wavelet_transform(y)
         iterate = deepcopy(out)

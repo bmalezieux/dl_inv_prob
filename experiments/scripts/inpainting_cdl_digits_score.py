@@ -18,9 +18,10 @@ mem = Memory(location="./tmp_cdl_digits/", verbose=0)
 D_ref = load_digits().images[:10]
 D_ref /= np.linalg.norm(D_ref, axis=(1, 2), keepdims=True)
 
+NUM_EXP = 5
 
 @mem.cache
-def run_test(params, random_seed):
+def run_test(params, random_seed, num_exp):
 
     rho = params["rho"]
     sigma = params["sigma"]
@@ -29,30 +30,34 @@ def run_test(params, random_seed):
     n_atoms = params["n_atoms"]
     dim_atom = params["dim_atom"]
     rng = np.random.default_rng(random_seed)
+    scores = []
 
-    y = create_image_digits(size, size, k=0.1, rng=rng)
-    mask = rng.binomial(1, rho, y.shape)
-    D_init = rng.normal(size=(n_atoms, 1, dim_atom, dim_atom))
-    # Corrupt the image
-    y_inpainting = y * mask + sigma * rng.normal(size=y.shape)
+    for i in range(num_exp):
 
-    dl = ConvolutionalInpainting(
-        n_atoms,
-        lambd=lambd,
-        init_D=D_init,
-        atom_height=dim_atom,
-        atom_width=dim_atom,
-        device=DEVICE,
-        rng=rng,
-        alpha=0.1,
-    )
-    # Perform inpainting with CDL
-    dl.fit(y_inpainting[None, :, :], mask[None, :, :])
-    D = dl.D_.squeeze()
-    score = rec_score_digits(D, D_ref)
+        y = create_image_digits(size, size, k=0.1, rng=rng)
+        mask = rng.binomial(1, rho, y.shape)
+        D_init = rng.normal(size=(n_atoms, 1, dim_atom, dim_atom))
+        # Corrupt the image
+        y_inpainting = y * mask + sigma * rng.normal(size=y.shape)
+
+        dl = ConvolutionalInpainting(
+            n_atoms,
+            lambd=lambd,
+            init_D=D_init,
+            atom_height=dim_atom,
+            atom_width=dim_atom,
+            device=DEVICE,
+            rng=rng,
+            alpha=0.1,
+        )
+        # Perform inpainting with CDL
+        dl.fit(y_inpainting[None, :, :], mask[None, :, :])
+        D = dl.D_.squeeze()
+        scores.append(rec_score_digits(D, D_ref))
 
     result = {
-        "score": score,
+        "score": np.mean(scores),
+        "std": np.std(scores)
     }
 
     return result
@@ -61,11 +66,11 @@ def run_test(params, random_seed):
 if __name__ == "__main__":
 
     hyperparams = {
-        "size": np.arange(100, 501, 100),
-        "sigma": [0., 0.05],
+        "size": np.arange(50, 300, 25),
+        "sigma": [0., 0.1],
         "rho": [0.3, 0.5, 0.7, 0.9],
-        "lambda": [0.1, 1.],
-        "n_atoms": [50],
+        "lambda": [0.01, 0.1, 1.],
+        "n_atoms": [30],
         "dim_atom": [10]
     }
 
@@ -76,7 +81,7 @@ if __name__ == "__main__":
 
     for params in tqdm(permuts_params):
         try:
-            results = run_test(params, SEED)
+            results = run_test(params, SEED, NUM_EXP)
 
             # Storing results
 

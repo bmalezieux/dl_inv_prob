@@ -4,7 +4,9 @@ from scipy.optimize import linear_sum_assignment
 from scipy.signal import correlate2d
 from sklearn.datasets import load_digits
 import torch
+import torch.nn.functional as F
 import torchvision.transforms as T
+import hashlib
 
 
 def generate_dico(n_components, dim_signal, rng=None):
@@ -222,11 +224,11 @@ def is_divergence(rec, ref):
 
     f_rec = np.fft.fft2(rec)
     fshift_rec = np.fft.fftshift(f_rec)
-    mag_rec = 20 * np.log(np.abs(fshift_rec))
+    mag_rec = np.abs(fshift_rec)
 
     f_ref = np.fft.fft2(ref)
     fshift_ref = np.fft.fftshift(f_ref)
-    mag_ref = 20 * np.log(np.abs(fshift_ref))
+    mag_ref = np.abs(fshift_ref)
 
     ratio = (mag_rec / mag_ref - np.log(mag_rec / mag_ref) - 1)
     is_div = ratio[~np.isnan(ratio)].sum()
@@ -401,12 +403,65 @@ def determinist_inpainting(
     if size is not None:
         img = img.resize((size, size), Image.ANTIALIAS)
     img = T.ToTensor()(img).to(device)
+
+    # Generate same mask for each image from seed
     rng = torch.Generator(device=device)
     rng.manual_seed(seed)
     mask = (
         torch.rand(img.shape, generator=rng, dtype=dtype, device=device) > prop
     )
-    noise = torch.randn(img.shape, generator=rng, dtype=dtype, device=device)
+
+    # Generate noise for a specific image
+    hash = hashlib.md5(bytes(img_path, "utf-8")).hexdigest()
+    seed_noise = int(hash[:8], 16)
+    rng_noise = torch.Generator(device=device)
+    rng_noise.manual_seed(seed_noise)
+    noise = torch.randn(img.shape, generator=rng_noise,
+                        dtype=dtype, device=device)
+
+    # Degraded image
     img_corr = torch.clip(mask * (img + sigma * noise), 0, 1)
 
     return img, img_corr, mask
+
+
+def determinist_blurr(
+    img_path, sigma_blurr, size_kernel, sigma, size=None,
+    dtype=torch.float32, device="cpu"
+):
+    """Apply deterministic blurr to an image."""
+    img = Image.open(img_path).convert("L")
+    if size is not None:
+        img = img.resize((size, size), Image.ANTIALIAS)
+    img = T.ToTensor()(img).to(device)
+
+    # Generate same blurr for each image from seed
+    t = np.linspace(-1, 1, size_kernel)
+    if sigma_blurr == 0:
+        sigma_blurr = 1e-2
+    gaussian = np.exp(-0.5 * (t / sigma_blurr) ** 2)
+    kernel = gaussian[None, :] * gaussian[:, None]
+    kernel /= kernel.sum()
+    kernel = torch.tensor(
+        kernel,
+        device=device,
+        dtype=torch.float,
+        requires_grad=False
+    )
+
+    # Generate noise for a specific image
+    hash = hashlib.md5(bytes(img_path, "utf-8")).hexdigest()
+    seed_noise = int(hash[:8], 16)
+    rng_noise = torch.Generator(device=device)
+    rng_noise.manual_seed(seed_noise)
+
+    # Degraded image
+    img_blurred = F.conv_transpose2d(
+        img[None, :, :],
+        kernel[None, None, :, :],
+    )
+    noise = torch.randn(img_blurred.shape, generator=rng_noise,
+                        dtype=dtype, device=device)
+    img_corr = torch.clip(img_blurred + sigma * noise, 0, 1)
+
+    return img, img_corr, kernel

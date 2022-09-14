@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.signal import convolve, correlate
 
 
 class ProxTV:
@@ -59,3 +60,39 @@ class ProxTV:
 
     def rec(self):
         return self.res
+
+
+class ProxTVDeblurring(ProxTV):
+
+    def __init__(self, lambd=1, n_iter=1000):
+        super().__init__(lambd=lambd, n_iter=n_iter)
+
+    def fit(self, y, A=None):
+        self.y = y.squeeze()
+        if A is None:
+            self.A = np.array([1])
+        else:
+            self.A = A.squeeze()
+
+        tau = 0.1
+        sigma = 1 / (8 * self.lambd * self.lambd * tau)
+        u = correlate(self.y, self.A, mode="valid")
+        px = np.zeros(u.shape)
+        py = np.zeros(u.shape)
+
+        for _ in range(self.n_iter):
+            uold = u.copy()
+            u = (
+                u
+                - tau * correlate(
+                    (convolve(u, self.A, mode="full") - self.y),
+                    self.A,
+                    mode="valid"
+                )
+                + tau * self.lambd * self.div([px, py])
+            )
+            gu = self.grad(2 * u - uold)
+            px = self.proxG(px + sigma * gu[0])
+            py = self.proxG(py + sigma * gu[1])
+
+        self.res = u

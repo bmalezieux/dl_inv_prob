@@ -1,34 +1,47 @@
 """
-Benchmark for inpainting with convolutional dictionary learning.
+Benchmark for inpainting and deblurring on a single image.
 """
 import datetime
 import itertools
-from dl_inv_prob.utils import determinist_inpainting
+from dl_inv_prob.utils import determinist_inpainting, determinist_blurr
 import numpy as np
 import os
 import pandas as pd
 import random
 import time
 import torch
+import argparse
 
 from dl_inv_prob.common_utils import (
     torch_to_np,
 )
-from dl_inv_prob.dl import ConvolutionalInpainting
-from dl_inv_prob.dip import DIPInpainting
+from dl_inv_prob.dl import ConvolutionalInpainting, Deconvolution
+from dl_inv_prob.dip import DIPInpainting, DIPDeblurring
 from dl_inv_prob.utils import psnr, is_divergence
 from joblib import Memory
 from pathlib import Path
 from tqdm import tqdm
-from utils.tv import ProxTV
-from utils.wavelets import SparseWavelets
+from utils.tv import ProxTV, ProxTVDeblurring
+from utils.wavelets import SparseWavelets, SparseWaveletsDeblurring
+
+parser = argparse.ArgumentParser()
+parser.add_argument('benchmark')
+args = parser.parse_args()
 
 EXPERIMENTS = Path(__file__).resolve().parents[1]
 DATA = os.path.join(EXPERIMENTS, "data")
 IMG = os.path.join(DATA, "flowers.png")
 RESULTS = os.path.join(EXPERIMENTS, "results")
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-RESULT_FILE = "inpainting_single_image.csv"
+DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
+BENCHMARK_MODE = args.benchmark
+
+if BENCHMARK_MODE == "inpainting":
+    RESULT_FILE = "inpainting_single_image.csv"
+elif BENCHMARK_MODE == "deblurring":
+    RESULTS_FILE = "deblurring_single_image.csv"
+else:
+    print("Not a benchmark")
+    exit(0)
 
 # Reproducibility
 SEED = 2022
@@ -46,19 +59,32 @@ torch.use_deterministic_algorithms(True)
 np.random.seed(SEED)
 random.seed(SEED)
 
-mem = Memory(location="./tmp_inpainting/", verbose=0)
+if BENCHMARK_MODE == "inpainting":
+    mem = Memory(location="./tmp_inpainting/", verbose=0)
+elif BENCHMARK_MODE == "deblurring":
+    mem = Memory(location="./tmp_deblurring/", verbose=0)
+
 
 ###########
 # Solvers #
 ###########
 
 
-SOLVERS = {
-    "CDL": ConvolutionalInpainting,
-    "TV": ProxTV,
-    "Wavelets": SparseWavelets,
-    "DIP": DIPInpainting,
-}
+if BENCHMARK_MODE == "inpainting":
+    SOLVERS = {
+        "CDL": ConvolutionalInpainting,
+        "TV": ProxTV,
+        "Wavelets": SparseWavelets,
+        "DIP": DIPInpainting,
+    }
+elif BENCHMARK_MODE == "deblurring":
+    SOLVERS = {
+        "CDL": Deconvolution,
+        "TV": ProxTVDeblurring,
+        "Wavelets": SparseWaveletsDeblurring,
+        "DIP": DIPDeblurring,
+    }
+
 
 #########################
 # Parameters extraction #
@@ -70,12 +96,24 @@ def extract_params(params):
     Extract relevant parameters.
     """
 
-    params_solver = {
-        "name": params["name"],
-        "size": params["size"],
-        "rho": params["rho"],
-        "sigma": params["sigma"],
-    }
+    if BENCHMARK_MODE == "inpainting":
+        params_solver = {
+            "name": params["name"],
+            "size": params["size"],
+            "rho": params["rho"],
+            "sigma": params["sigma"],
+            "size_blurr": 0,
+            "sigma_blurr": 0,
+        }
+    elif BENCHMARK_MODE == "deblurring":
+        params_solver = {
+            "name": params["name"],
+            "size": params["size"],
+            "rho": 0,
+            "sigma": params["sigma"],
+            "size_blurr": params["size_blurr"],
+            "sigma_blurr": params["sigma_blurr"],
+        }
 
     solver_name = params["name"]
 
@@ -161,6 +199,34 @@ def generate_algo(params):
 #############
 
 
+def data_generation(params):
+
+    if BENCHMARK_MODE == "inpainting":
+        size = params["size"]
+        rho = params["rho"]
+        sigma = params["sigma"]
+        img, img_inpainting, mask = determinist_inpainting(
+            IMG, prop=1 - rho, sigma=sigma, size=size
+        )
+        img = torch_to_np(img).squeeze()
+        img_corrupted = torch_to_np(img_inpainting).squeeze()
+        A = torch_to_np(mask).squeeze()
+
+    elif BENCHMARK_MODE == "deblurring":
+        size = params["size"]
+        sigma_blurr = params["sigma_blurr"]
+        size_blurr = params["size_blurr"]
+        sigma = params["sigma"]
+        img, img_blurred, blurr = determinist_blurr(
+            IMG, sigma_blurr, size_blurr, sigma=sigma, size=size
+        )
+        img = torch_to_np(img).squeeze()
+        img_corrupted = torch_to_np(img_blurred).squeeze()
+        A = blurr.numpy()        
+
+    return img, img_corrupted, A
+
+
 @mem.cache
 def run_test(params):
     """
@@ -168,37 +234,29 @@ def run_test(params):
     """
 
     # Data generation
-    size = params["size"]
-    rho = params["rho"]
-    sigma = params["sigma"]
-    img, img_inpainting, mask = determinist_inpainting(
-        IMG, prop=1 - rho, sigma=sigma, size=size
-    )
-    img = torch_to_np(img).squeeze()
-    img_inpainting = torch_to_np(img_inpainting).squeeze()
-    mask = torch_to_np(mask).squeeze()
+    img, img_corrupted, A = data_generation(params)
 
     # Reconstruction
     start = time.time()
     algo = generate_algo(params)
-    algo.fit(img_inpainting[None, :, :], mask[None, :, :])
+    algo.fit(img_corrupted[None, :, :], A[None, :, :])
     rec = algo.rec().squeeze()
     rec = np.clip(rec, 0, 1)
     stop = time.time()
 
     # Result
     psnr_rec = psnr(rec, img)
-    psnr_corr = psnr(img_inpainting, img)
+    # psnr_corr = psnr(img_corrupted, img)
     is_rec = is_divergence(rec, img)
-    is_corr = is_divergence(img_inpainting, img)
+    # is_corr = is_divergence(img_corrupted, img)
     delta = stop - start
     delta = str(datetime.timedelta(seconds=delta))
 
     results = {
-        "psnr_corr": psnr_corr,
+        # "psnr_corr": psnr_corr,
         "psnr_rec": psnr_rec,
         "is_rec": is_rec,
-        "is_corr": is_corr,
+        # "is_corr": is_corr,
         "time": delta,
     }
 
@@ -216,10 +274,11 @@ if __name__ == "__main__":
         "size": [256],
         "sigma": [0.0, 0.02, 0.05, 0.1],
         "rho": np.arange(0.1, 1.0, 0.1),
-        "name": SOLVERS.keys(),
+        "sigma_blurr": np.arange(0.1, 1.0, 0.1),
+        "size_blurr": [10],
         "n_atoms": [50, 100],
         "lambd": [0.01, 0.05, 0.1],
-        "dim_atoms": [10],
+        "dim_atoms": [20],
         "n_iter": [1000],
         "wavelet": ["db3"],
         "step": [1.0],
@@ -228,6 +287,7 @@ if __name__ == "__main__":
         "sigma_reg_noise": [0.03],
         "input_depth": [32],
         "model": ["SkipNet"],
+        "name": SOLVERS.keys(),
     }
 
     keys, values = zip(*hyperparams.items())

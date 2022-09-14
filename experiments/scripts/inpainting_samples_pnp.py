@@ -12,7 +12,6 @@ from dl_inv_prob.dataset import (
 from dl_inv_prob.models.DnCNN import DnCNN
 from dl_inv_prob.training import train
 from dl_inv_prob.utils import psnr
-from math import floor
 import numpy as np
 import os
 import pandas as pd
@@ -22,6 +21,8 @@ import time
 import torch
 import torch.optim
 import torch.nn as nn
+from pathlib import Path
+import itertools
 
 start_time = time.time()
 
@@ -30,27 +31,32 @@ DTYPE = torch.float32
 TRAINING = True
 
 # Paths
-DATA_PATH = "experiments/data"
+
+EXPERIMENTS = Path(__file__).resolve().parents[1]
+DATA_PATH = os.path.join(EXPERIMENTS, "data")
 CLEAN_DATA = os.path.join(DATA_PATH, "Train400")
 IMG_PATH = os.path.join(DATA_PATH, "flowers.png")
-MODELS_PATH = "dl_inv_prob/models/pretrained"
+MODELS_PATH = os.path.join(EXPERIMENTS, "../dl_inv_prob/models/pretrained")
 CORRUPTED_DENOISER_NAME = "DnCNN_denoising_inpainting"
 CLEAN_DENOISER_NAME = "DnCNN_denoising"
+RESULTS = os.path.join(EXPERIMENTS, "results/inpainting_pnp.csv")
 
 # Hyperparameters
-N_EPOCHS = 100
-BATCH_SIZE = 32
-VAL_BATCH_SIZE = 32
-LR = 0.001  # Learning rate to train the denoiser
-N_SAMPLES = 20 * np.arange(1, 6)  # Training samples
-SIGMA_MAX_DENOISER = 0.3  # Max noise level to train the denoiser
-SIGMA_TRAIN_SAMPLE = 0.0  # Noise level of "clean" training samples
-SIGMA_TEST_SAMPLE = 0.1  # Noise level of the corrupted test image
-PROP = 0.1 * np.arange(1, 6)  # Proportion of missing pixels
 
-# PnP hyperparameters
-STEP = 1.0  # Step size of PnP
-N_ITER = 100  # Number of PnP iterations
+hyperparams = {
+    "sigma_max_denoiser": [0.05, 0.1, 0.3],
+    "sigma_sample": [0, 0.02, 0.05, 0.1],
+    "prop": np.arange(0.1, 1, 0.1),
+    "n_samples": [200, 400],
+    "n_epochs": [50],
+    "batch_size": [32],
+    "lr": [0.001],
+    "step_pnp": [1.0],
+    "iter_pnp": [100]
+}
+
+keys, values = zip(*hyperparams.items())
+permuts_params = [dict(zip(keys, v)) for v in itertools.product(*values)]
 
 # Reproducibility
 SEED = 2022
@@ -74,136 +80,142 @@ img = img.convert("L")
 img_np = pil_to_np(img)
 img = np_to_torch(img_np).type(DTYPE).to(DEVICE)
 
-psnrs_rec = np.zeros((len(N_SAMPLES), len(PROP)))
-psnrs_rec_ref = np.zeros((len(N_SAMPLES), len(PROP)))
-psnrs_corrupted = np.zeros(len(PROP))
 mse = nn.MSELoss()
+dict_results = {}
 
-for i_prop, prop in enumerate(PROP):
+for params in permuts_params:
 
     # Corrupt the test image with a binary mask and noise
     mask = (
-        torch.rand(img.shape, generator=RNG, dtype=DTYPE, device=DEVICE) > prop
+        torch.rand(
+            img.shape,
+            generator=RNG,
+            dtype=DTYPE,
+            device=DEVICE
+        ) > params["prop"]
     )
     noise = torch.randn(img.shape, generator=RNG, dtype=DTYPE, device=DEVICE)
-    corrupted_img = img * mask + SIGMA_TEST_SAMPLE * noise
+    corrupted_img = img * mask + params["sigma_sample"] * noise
     corrupted_img_np = torch_to_np(corrupted_img)
 
     # Store psnr of the corrupted image
     psnr_corr = psnr(corrupted_img_np, img_np)
-    psnrs_corrupted[i_prop] = psnr_corr
 
-    for i_n, n_samples in enumerate(N_SAMPLES):
+    # Create inpainted denoising dataset
+    corrupted_dataset = DenoisingInpaintingDataset(
+        path=CLEAN_DATA,
+        n_samples=params["n_samples"],
+        noise_std=params["sigma_max_denoiser"],
+        rng=RNG,
+        prop=params["prop"],
+        sigma=params["sigma_sample"],
+        dtype=DTYPE,
+        device=DEVICE,
+    )
 
-        print(f"prop = {prop:.2f}, n_samples = {n_samples}\n")
+    # Create clean denoising dataset
+    clean_dataset = DenoisingDataset(
+        path=CLEAN_DATA,
+        n_samples=params["n_samples"],
+        noise_std=params["sigma_max_denoiser"],
+        rng=RNG,
+        dtype=DTYPE,
+        device=DEVICE,
+    )
 
-        denoiser_names = [CORRUPTED_DENOISER_NAME, CLEAN_DENOISER_NAME]
-        file_names = [
-            f"{name}_{n_samples}_{floor(prop * 100)}"
-            for name in denoiser_names
-        ]
-        if TRAINING:
+    datasets = [corrupted_dataset, clean_dataset]
+    modes = ["denoising_inpainting", "denoising"]
+    file_name = "DnCNN_pnp"
 
-            # Create inpainted denoising dataset
-            corrupted_dataset = DenoisingInpaintingDataset(
-                path=CLEAN_DATA,
-                n_samples=n_samples,
-                noise_std=SIGMA_MAX_DENOISER,
-                rng=RNG,
-                prop=prop,
-                sigma=SIGMA_TRAIN_SAMPLE,
-                dtype=DTYPE,
-                device=DEVICE,
-            )
+    for dataset, mode in zip(datasets, modes):
 
-            # Create clean denoising dataset
-            clean_dataset = DenoisingDataset(
-                path=CLEAN_DATA,
-                n_samples=n_samples,
-                noise_std=SIGMA_MAX_DENOISER,
-                rng=RNG,
-                dtype=DTYPE,
-                device=DEVICE,
-            )
+        train_dataloader, val_dataloader = train_val_dataloaders(
+            dataset=dataset,
+            train_batch_size=params["batch_size"],
+            val_batch_size=params["batch_size"],
+            val_split_fraction=0.1,
+            np_rng=NP_RNG,
+            seed=SEED,
+            num_workers=0,
+        )
 
-            datasets = [corrupted_dataset, clean_dataset]
-            modes = ["denoising_inpainting", "denoising"]
+        denoiser = DnCNN().to(DEVICE).type(DTYPE)
 
-            for dataset, file_name, mode in zip(datasets, file_names, modes):
-                train_dataloader, val_dataloader = train_val_dataloaders(
-                    dataset=dataset,
-                    train_batch_size=BATCH_SIZE,
-                    val_batch_size=VAL_BATCH_SIZE,
-                    val_split_fraction=0.1,
-                    np_rng=NP_RNG,
-                    seed=SEED,
-                    num_workers=0,
-                )
+        # Train the denoising network on the dataset
+        type = "clean" if mode == "denoising" else "corrupted"
+        print(f"Training the denoising network on the {type} dataset")
 
-                denoiser = DnCNN().to(DEVICE).type(DTYPE)
+        denoiser, losses, val_losses = train(
+            model=denoiser,
+            loss_fn=mse,
+            mode=mode,
+            train_dataloader=train_dataloader,
+            val_dataloader=val_dataloader,
+            file_name=file_name,
+            model_path=MODELS_PATH,
+            learning_rate=params["lr"],
+            device=DEVICE,
+            n_epochs=params["n_epochs"],
+        )
+        print()
 
-                # Train the denoising network on the dataset
-                type = "clean" if mode == "denoising" else "corrupted"
-                print(f"Training the denoising network on the {type} dataset")
+        # Load the trained denoiser
+        denoiser = DnCNN().to(DEVICE).type(DTYPE)
+        DENOISER_PATH = os.path.join(MODELS_PATH, file_name + ".pt")
+        denoiser.load_state_dict(torch.load(DENOISER_PATH))
+        denoiser.eval()
 
-                denoiser, losses, val_losses = train(
-                    model=denoiser,
-                    loss_fn=mse,
-                    mode=mode,
-                    train_dataloader=train_dataloader,
-                    val_dataloader=val_dataloader,
-                    file_name=file_name,
-                    learning_rate=LR,
-                    device=DEVICE,
-                    n_epochs=N_EPOCHS,
-                )
-                print()
+        # Reconstruct the image with Plug-and-Play Forward-Backward
+        type = "clean" if mode == "denoising" else "corrupted"
+        print(f"PnP with the {type} denoiser")
 
-        for file_name, mode in zip(file_names, modes):
-            # Load the trained denoiser
-            denoiser = DnCNN().to(DEVICE).type(DTYPE)
-            DENOISER_PATH = os.path.join(MODELS_PATH, file_name + ".pt")
-            denoiser.load_state_dict(torch.load(DENOISER_PATH))
-            denoiser.eval()
+        out = torch.zeros_like(img, dtype=DTYPE, device=DEVICE)
+        with torch.no_grad():
+            for iter in range(1, params["iter_pnp"] + 1):
+                grad = mask * (out - corrupted_img)
+                out -= params["step_pnp"] * grad
+                out = torch.clip(denoiser(out), 0, 1)
+                loss = mse(out * mask, corrupted_img)
+                if iter % 10 == 0:
+                    print(f"Iteration {iter}, loss = {loss.item()}")
 
-            # Reconstruct the image with Plug-and-Play Forward-Backward
-            type = "clean" if mode == "denoising" else "corrupted"
-            print(f"PnP with the {type} denoiser")
+        out_np = torch_to_np(out)
+        print()
 
-            out = torch.zeros_like(img, dtype=DTYPE, device=DEVICE)
-            with torch.no_grad():
-                for iter in range(1, N_ITER + 1):
-                    grad = mask * (out - corrupted_img)
-                    out -= STEP * grad
-                    out = torch.clip(denoiser(out), 0, 1)
-                    loss = mse(out * mask, corrupted_img)
-                    if iter % 10 == 0:
-                        print(f"Iteration {iter}, loss = {loss.item()}")
+        # Store PSNR
+        psnr_rec = psnr(out_np, img_np)
+        if mode == "denoising_inpainting":
+            psnr_rec_unsupervised = psnr_rec
+        elif mode == "denoising":
+            psnr_rec_supervised = psnr_rec
 
-            out_np = torch_to_np(out)
-            print()
+        print(params)
+        print(f"psnr_rec = {psnr_rec:.2f}, mode={mode}")
+        print(f"psnr_corr = {psnr_corr:.2f}")
+        delta = time.time() - start_time
+        delta = str(datetime.timedelta(seconds=delta))
+        print(f"elapsed time: {delta}\n")
 
-            # Store PSNR
-            psnr_rec = psnr(out_np, img_np)
-            if mode == "denoising_inpainting":
-                psnrs_rec[i_prop, i_n] = psnr_rec
-            elif mode == "denoising":
-                psnrs_rec_ref[i_prop, i_n] = psnr_rec
+    # Saving results
+    results = {
+        "psnr_rec_unsupervised": psnr_rec_unsupervised,
+        "psnr_rec_supervised": psnr_rec_supervised,
+        "psnr_corr": psnr_corr
+    }
 
-            print(f"prop = {prop:.2f}, n_samples = {n_samples}")
-            print(f"psnr_rec = {psnr_rec:.2f}, mode={mode}")
-            print(f"psnr_corr = {psnr_corr:.2f}")
-            delta = time.time() - start_time
-            delta = str(datetime.timedelta(seconds=delta))
-            print(f"elapsed time: {delta}\n")
+    for key in params.keys():
+        if key not in dict_results:
+            dict_results[key] = [params[key]]
+        else:
+            dict_results[key].append(params[key])
+
+    for key in results.keys():
+        if key not in dict_results:
+            dict_results[key] = [results[key]]
+        else:
+            dict_results[key].append(results[key])
+
 
 # Save the results
-results_df = {
-    "psnrs_rec": {"psnrs_rec": psnrs_rec},
-    "psnrs_rec_ref": {"psnrs_rec_ref": psnrs_rec_ref},
-    "psnrs_corrupted": {"psnrs_corrupted": psnrs_corrupted},
-    "n_samples": {"n_samples": N_SAMPLES},
-    "props": {"props": PROP},
-}
-results_df = pd.DataFrame(results_df)
-results_df.to_pickle("experiments/results/inpainting_samples_pnp.pickle")
+results_df = pd.DataFrame(dict_results)
+results_df.to_csv(str(RESULTS))

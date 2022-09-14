@@ -3,6 +3,7 @@ from dl_inv_prob.utils import (create_patches_overlap, generate_dico,
                                patch_average, psnr, recovery_score)
 import numpy as np
 import pandas as pd
+import torch
 from PIL import Image
 from tqdm import tqdm
 
@@ -16,26 +17,26 @@ dim_image = 128
 dim_patch = 8
 patch_len = dim_patch ** 2
 n_atoms = 100
-nb_s = 10
-s_values = np.linspace(0, 1, nb_s)
-
-scores = np.zeros((N_EXP, nb_s))
-psnrs = np.zeros((N_EXP, nb_s))
-psnrs_corrupted = np.zeros((N_EXP, nb_s))
-
-rec_images = np.zeros((N_EXP, nb_s, dim_image, dim_image))
-corrupted_images = np.zeros((N_EXP, nb_s, dim_image, dim_image))
+s_values = np.arange(0.1, 1.0, 0.1)
 
 # Image preprocessing
 img = Image.open(DATA_PATH)
 img = np.array(img.resize((dim_image,
-                           dim_image), Image.ANTIALIAS).convert('L')) / 255
+                           dim_image), Image.ANTIALIAS).convert('L')) / 255.
 
 # Patch extraction
 y, _ = create_patches_overlap(img, dim_patch)
 trivial_masks = np.ones(y.shape)
 
-for n_exp in tqdm(range(N_EXP)):
+dict_results = {
+    "scores": [],
+    "scores_weights": [],
+    "psnrs": [],
+    "psnrs_corrupted": [],
+    "s_values": []
+}
+
+for n_exp in range(N_EXP):
     # Shared random initialization
     D_init = generate_dico(n_atoms, patch_len, rng=RNG)
 
@@ -46,7 +47,7 @@ for n_exp in tqdm(range(N_EXP)):
         device=DEVICE,
         rng=RNG
     )
-    dl.fit(y[:, :, None], trivial_masks)
+    dl.fit(y[:, :, None], trivial_masks[:, :, None])
     D_no_inpainting = dl.D_
 
     for i, s in tqdm(enumerate(s_values)):
@@ -63,33 +64,27 @@ for n_exp in tqdm(range(N_EXP)):
             device=DEVICE,
             rng=RNG
         )
-        dl_inpainting.fit(y_inpainting[:, :, None], masks)
+        dl_inpainting.fit(y_inpainting[:, :, None], masks[:, :, None])
         D_inpainting = dl_inpainting.D_
 
-        scores[n_exp, i] = recovery_score(D_inpainting, D_no_inpainting)
+        Y_tensor = torch.from_numpy(y_inpainting[:, :, None]).float().to(dl_inpainting.device)
+        with torch.no_grad():
+            codes = dl_inpainting.forward(Y_tensor).detach().to("cpu").numpy()
+
+        weights = np.abs(codes).sum(axis=(0, 2))
 
         # Compute the reconstructed image
-        rec_patches = dl_inpainting.rec()
+        rec_patches = dl_inpainting.rec(y_inpainting[:, :, None])
         rec = patch_average(rec_patches, dim_patch,
                             dim_image, dim_image)
         rec = np.clip(rec, 0, 1)
 
-        # Store images
-        rec_images[n_exp, i, :] = rec
-        corrupted_images[n_exp, i, :] = img_inpainting
+        dict_results["scores"].append(recovery_score(D_inpainting, D_no_inpainting))
+        dict_results["scores_weights"].append(recovery_score(D_inpainting, D_no_inpainting, weights))
+        dict_results["psnrs"].append(psnr(rec, img))
+        dict_results["psnrs_corrupted"].append(psnr(img_inpainting, img))
+        dict_results["s_values"].append(s)
 
-        # Store psnrs
-        psnrs[n_exp, i] = psnr(rec, img)
-        psnrs_corrupted[n_exp, i] = psnr(img_inpainting, img)
 
-results_df = {
-    "scores": {"scores": scores},
-    "psnrs": {"psnrs": psnrs},
-    "psnrs_corrupted": {"psnrs_corrupted": psnrs_corrupted},
-    "s_values": {"s_values": s_values}
-}
-results_df = pd.DataFrame(results_df)
-results_df.to_pickle("../results/inpainting_patches.pickle")
-
-np.save("../results/inpainting_patches_rec_images.npy", rec_images)
-np.save("../results/inpainting_patches_corrupted_images.npy", corrupted_images)
+results_df = pd.DataFrame(dict_results)
+results_df.to_csv("../results/inpainting_patches.csv")

@@ -1,5 +1,9 @@
 # Tmp
 tmp_cdl_digits
+tmp_inpainting
+tmp_inpainting_supervised
+tmp_inpainting_color
+pretrained
 
 # Results
 *.pdf
@@ -7,6 +11,7 @@ tmp_cdl_digits
 *.npy
 *.pickle
 *.csv
+*.pt
 
 # Data
 !experiments/data/flowers.png

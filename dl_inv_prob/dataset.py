@@ -68,6 +68,7 @@ class DenoisingInpaintingDataset(Dataset):
     def __init__(
         self,
         path,
+        seed_inpainting=2022,
         n_samples=None,
         noise_std=0.3,
         rng=None,
@@ -83,16 +84,18 @@ class DenoisingInpaintingDataset(Dataset):
         self.device = device
         self.prop = prop
         self.sigma = sigma
+        self.seed_inpaiting = seed_inpainting
 
     def __len__(self):
         return len(self.images)
 
     def __getitem__(self, idx):
         img_path = self.images[idx]
-        original, mask = determinist_inpainting(
+        original, corrupted, mask = determinist_inpainting(
             img_path=img_path,
             prop=self.prop,
             sigma=self.sigma,
+            seed=self.seed_inpaiting,
             dtype=self.dtype,
             device=self.device,
         )
@@ -108,7 +111,7 @@ class DenoisingInpaintingDataset(Dataset):
             )
             * self.noise_std
         )
-        noisy = original + random_sigma * noise
+        noisy = mask * (corrupted + random_sigma * noise)
 
         return noisy, original, mask
 

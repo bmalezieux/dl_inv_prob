@@ -489,12 +489,10 @@ class Inpainting(DictionaryLearning):
         Computes an upper bound of the Lipschitz constant of the dictionary.
         """
         with torch.no_grad():
-            product = self.masks * self.D
             self.lipschitz = (
                 torch.norm(
-                    torch.matmul(product.transpose(1, 2), product), dim=(1, 2)
+                    torch.matmul(self.D.t(), self.D)
                 )
-                .max()
                 .item()
             )
             if self.lipschitz == 0:
@@ -516,9 +514,7 @@ class Inpainting(DictionaryLearning):
         cost : float
             Cost value
         """
-        product = self.masks * self.D
-
-        res = torch.matmul(product, x) - y
+        res = self.masks * torch.matmul(self.D, x) - y
         l2 = (res * res).sum()
         l1 = torch.abs(x).sum()
 
@@ -550,7 +546,6 @@ class Inpainting(DictionaryLearning):
 
         # Computing step and product
         step = 1.0 / self.lipschitz
-        product = self.masks * self.D
 
         for i in range(self.max_iter):
             # Keep last iterate for FISTA
@@ -558,7 +553,7 @@ class Inpainting(DictionaryLearning):
 
             # Gradient descent
             gradient = torch.matmul(
-                product.transpose(1, 2), torch.matmul(product, out) - y
+                self.D.t(), self.masks * torch.matmul(self.D, out) - y
             )
             out = out - step * gradient
 
@@ -583,8 +578,8 @@ class Inpainting(DictionaryLearning):
         ----------
         Y : ndarray, shape (n_matrices, dim_y, data_size)
             Observations to be processed
-        masks : ndarray, shape (n_matrices, dim_y)
-            Diagonal masks
+        masks : ndarray, shape (n_matrices, dim_y, data_size)
+            Masks
         cov_inv : ndarray, shape (dim_signal, dim_signal)
             Inverse of covariance A.T @ A
 
@@ -926,7 +921,7 @@ class ConvolutionalInpainting(DictionaryLearning):
         loss = self.training_process()
         return loss
 
-    def rec(self, Y=None):
+    def rec(self, Y=None, masks=None):
         """
         Reconstruct the image with the learned atoms and sparse codes.
 
@@ -945,6 +940,9 @@ class ConvolutionalInpainting(DictionaryLearning):
                 Y_tensor = self.Y_tensor
             else:
                 Y_tensor = torch.from_numpy(Y).float().to(self.device)
+
+            if masks is not None:
+                self.masks = torch.from_numpy(masks).float().to(self.device)
             x = self.forward(Y_tensor)
             rec = self.convt(x, self.D)
 

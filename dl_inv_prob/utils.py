@@ -1,4 +1,3 @@
-import hashlib
 import numpy as np
 from PIL import Image
 from scipy.optimize import linear_sum_assignment
@@ -70,7 +69,7 @@ def generate_data(D, N, s=0.1, rng=None):
     return signal, X
 
 
-def recovery_score(D, D_ref):
+def recovery_score(D, D_ref, weights=None):
     """
     Compute a similarity score in [0, 1] between two dictionaries.
 
@@ -80,16 +79,21 @@ def recovery_score(D, D_ref):
         Dictionary
     Dref : ndarray, shape (dim_signal, n_components)
         Reference dictionary
+    weights : ndarray, shape (n_components)
+        Weights of usage
 
     Returns
     -------
     score : float
         _Recovery score in [0, 1]
     """
-    cost_matrix = np.abs(D_ref.T @ D)
+    if weights is None:
+        weights = np.ones(D.shape[1])
+
+    cost_matrix = np.abs(D_ref.T @ ((D.T * weights[:, None]).T))
 
     row_ind, col_ind = linear_sum_assignment(cost_matrix, maximize=True)
-    score = cost_matrix[row_ind, col_ind].sum() / D.shape[1]
+    score = cost_matrix[row_ind, col_ind].sum() / weights.sum()
 
     return score
 
@@ -144,7 +148,7 @@ def extract_patches(img, dim_patch):
     i_patch = 0
     for i in range(0, dim_img, dim_patch):
         for j in range(0, dim_img, dim_patch):
-            res[i_patch, :, :] = img[i : i + dim_patch, j : j + dim_patch]
+            res[i_patch, :, :] = img[i:i + dim_patch, j:j + dim_patch]
             i_patch += 1
     patches = np.array(res)
 
@@ -199,6 +203,37 @@ def psnr(rec, ref):
     return psnr
 
 
+def is_divergence(rec, ref):
+    """
+    Compute the Itakura Saito divergence between the spectrum of two images
+
+    Parameters
+    ----------
+    rec : ndarray, shape (height, width)
+        reconstructed image
+    ref : ndarray, shape (height, width)
+        original image
+
+    Returns
+    -------
+    is_div : float
+        IS divergence
+    """
+
+    f_rec = np.fft.fft2(rec)
+    fshift_rec = np.fft.fftshift(f_rec)
+    mag_rec = 20 * np.log(np.abs(fshift_rec))
+
+    f_ref = np.fft.fft2(ref)
+    fshift_ref = np.fft.fftshift(f_ref)
+    mag_ref = 20 * np.log(np.abs(fshift_ref))
+
+    ratio = (mag_rec / mag_ref - np.log(mag_rec / mag_ref) - 1)
+    is_div = ratio[~np.isnan(ratio)].sum()
+
+    return is_div
+
+
 def create_patches_overlap(im, m, A=None):
     """
     Create an array of flattened overlapping patches.
@@ -225,10 +260,10 @@ def create_patches_overlap(im, m, A=None):
     for i in range(r):
         for j in range(c):
             if i + m <= r and j + m <= c:
-                patches.append((im[i : i + m, j : j + m]).reshape(m * m, 1))
+                patches.append((im[i:i + m, j:j + m]).reshape(m * m, 1))
                 if A is not None:
                     patches_a.append(
-                        (A[i : i + m, j : j + m]).reshape(m * m, 1)
+                        (A[i:i + m, j:j + m]).reshape(m * m, 1)
                     )
     result_y = np.concatenate(patches, axis=1).T
     if A is not None:
@@ -264,8 +299,8 @@ def patch_average(patches, m, r, c):
     for i in range(r):
         for j in range(c):
             if i + m <= r and j + m <= c:
-                im[i : i + m, j : j + m] += patches[cpt, :].reshape(m, m)
-                avg[i : i + m, j : j + m] += np.ones((m, m))
+                im[i:i + m, j:j + m] += patches[cpt, :].reshape(m, m)
+                avg[i:i + m, j:j + m] += np.ones((m, m))
                 cpt += 1
     im = im / avg
 
@@ -358,13 +393,12 @@ def gaussian_kernel(dim, sigma):
 
 
 def determinist_inpainting(
-    img_path, prop, sigma, size=None, dtype=torch.float32, device="cpu"
+    img_path, prop, sigma, seed=2022, size=None,
+    dtype=torch.float32, device="cpu"
 ):
     """Apply deterministic inpainting to an image."""
-    hash = hashlib.md5(bytes(img_path, "utf-8")).hexdigest()
-    seed = int(hash[:8], 16)
     img = Image.open(img_path).convert("L")
-    if img is not None:
+    if size is not None:
         img = img.resize((size, size), Image.ANTIALIAS)
     img = T.ToTensor()(img).to(device)
     rng = torch.Generator(device=device)

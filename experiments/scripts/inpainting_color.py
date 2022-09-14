@@ -47,6 +47,7 @@ SIZE = 256
 img = Image.open(IMG).convert("RGB").resize((SIZE, SIZE), Image.ANTIALIAS)
 img = pil_to_np(img)
 
+os.makedirs(RESULTS, exist_ok=True)
 plt.imsave(os.path.join(RESULTS, "clean.png"), np.transpose(img, (1, 2, 0)))
 
 # CDL

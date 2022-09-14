@@ -5,8 +5,6 @@ import time
 import torch
 import torch.optim
 
-MODEL_PATH = "dl_inv_prob/models/pretrained"
-
 
 def check_loss(model, loss_fn, dataloader, device, mode="denoising"):
     """Compute the loss in evaluation mode."""
@@ -41,6 +39,7 @@ def train(
     train_dataloader,
     val_dataloader,
     file_name,
+    model_path,
     mode="denoising",
     optimizer=None,
     scheduler=None,
@@ -112,7 +111,7 @@ def train(
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(
-                model.state_dict(), os.path.join(MODEL_PATH, file_name + ".pt")
+                model.state_dict(), os.path.join(model_path, file_name + ".pt")
             )
             print("Saved new model with best val_loss")
 

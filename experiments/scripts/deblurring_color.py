@@ -110,9 +110,9 @@ cdl = Deconvolution(
     )
 
 models = {
-    # "tv": proxtv,
-    # "wavelets": sparse,
-    # "cdl": cdl,
+    "tv": proxtv,
+    "wavelets": sparse,
+    "cdl": cdl,
     "dip": dip,
 }
 

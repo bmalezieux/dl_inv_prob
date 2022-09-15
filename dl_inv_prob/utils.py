@@ -427,7 +427,7 @@ def determinist_inpainting(
 
 def determinist_blurr(
     img_path, sigma_blurr, size_kernel, sigma, size=None,
-    dtype=torch.float32, device="cpu"
+    dtype=torch.float32, device="cpu", padding=None
 ):
     """Apply deterministic blurr to an image."""
     img = Image.open(img_path).convert("L")
@@ -456,12 +456,19 @@ def determinist_blurr(
     rng_noise.manual_seed(seed_noise)
 
     # Degraded image
-    img_blurred = F.conv_transpose2d(
-        img[None, :, :],
-        kernel[None, None, :, :],
-    )
+    if padding is None:
+        img_blurred = F.conv_transpose2d(
+            img[None, :, :],
+            kernel[None, None, :, :],
+        )
+    elif padding == "same":
+        img_blurred = F.conv2d(
+            img[None, :, :],
+            torch.flip(kernel[None, None, :, :], dims=[2, 3]),
+            padding="same"
+        )
     noise = torch.randn(img_blurred.shape, generator=rng_noise,
                         dtype=dtype, device=device)
     img_corr = torch.clip(img_blurred + sigma * noise, 0, 1)
 
-    return img, img_corr, kernel
+    return img, img_corr[0], kernel[None, :, :]

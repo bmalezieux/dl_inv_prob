@@ -6,12 +6,12 @@ from dl_inv_prob.common_utils import (
 )
 from dl_inv_prob.dataset import (
     DenoisingDataset,
-    DenoisingInpaintingDataset,
+    DenoisingDeblurringDataset,
     train_val_dataloaders,
 )
 from dl_inv_prob.models.DnCNN import DnCNN
 from dl_inv_prob.training import train
-from dl_inv_prob.utils import psnr, determinist_inpainting
+from dl_inv_prob.utils import psnr, gaussian_kernel, determinist_blurr
 import numpy as np
 import os
 import pandas as pd
@@ -21,6 +21,7 @@ import time
 import torch
 import torch.optim
 import torch.nn as nn
+import torch.nn.functional as F
 from pathlib import Path
 import itertools
 
@@ -37,9 +38,9 @@ DATA_PATH = os.path.join(EXPERIMENTS, "data")
 CLEAN_DATA = os.path.join(DATA_PATH, "Train400")
 IMG_PATH = os.path.join(DATA_PATH, "flowers.png")
 MODELS_PATH = os.path.join(EXPERIMENTS, "../dl_inv_prob/models/pretrained")
-CORRUPTED_DENOISER_NAME = "DnCNN_denoising_inpainting"
+CORRUPTED_DENOISER_NAME = "DnCNN_denoising_deblurring"
 CLEAN_DENOISER_NAME = "DnCNN_denoising"
-RESULTS = os.path.join(EXPERIMENTS, "results/inpainting_pnp.csv")
+RESULTS = os.path.join(EXPERIMENTS, "results/deblurring_pnp.csv")
 SIZE = 180
 
 # Hyperparameters
@@ -47,7 +48,8 @@ SIZE = 180
 hyperparams = {
     "sigma_max_denoiser": [0.05, 0.1, 0.3],
     "sigma_sample": [0, 0.02, 0.05, 0.1],
-    "prop": np.arange(0.1, 1, 0.1),
+    "sigma_blurr": np.arange(0.1, 1.0, 0.1),
+    "size_blurr": [10],
     "n_samples": [200],
     "n_epochs": [50],
     "batch_size": [32],
@@ -85,50 +87,45 @@ mse = nn.MSELoss()
 dict_results = {}
 
 for params in permuts_params:
-    
-    # mask = (
-    #     torch.rand(
-    #         img.shape,
-    #         generator=RNG,
-    #         dtype=DTYPE,
-    #         device=DEVICE
-    #     ) > params["prop"]
-    # )
-    # noise = torch.randn(img.shape, generator=RNG, dtype=DTYPE, device=DEVICE)
-    # corrupted_img = img * mask + params["sigma_sample"] * noise
-    # corrupted_img_np = torch_to_np(corrupted_img)
-    
-    # import ipdb
-    # ipdb.set_trace()
 
-    # Corrupt the test image with a binary mask and noise
-    img, corrupted_img, mask = determinist_inpainting(
-        img_path=IMG_PATH,
-        prop=params["prop"],
-        sigma=params["sigma_sample"],
+    # Corrupt the test image with a blurr and noise
+    img, corrupted, blurr = determinist_blurr(
+        IMG_PATH,
+        params["sigma_blurr"],
+        params["size_blurr"],
+        params["sigma_sample"],
         size=SIZE,
-        seed=SEED,
         dtype=DTYPE,
-        device=DEVICE,
+        device=DEVICE
     )
-    mask = mask[None, :, :]
+
+    y_conv_display = F.conv2d(
+        img[None, :, :],
+        torch.flip(blurr[None, :, :], dims=[2, 3]),
+        padding="same"
+    )
+    noise_same = torch.randn(y_conv_display.shape, generator=RNG, dtype=DTYPE, device=DEVICE)
+
     img = img[None, :, :]
-    corrupted_img = corrupted_img[None, :, :]
+    blurr = blurr[None, :, :]
+    corrupted_img = corrupted[None, :, :]
     corrupted_img_np = torch_to_np(corrupted_img)
+
     img_np = torch_to_np(img)
-    
-    # ipdb.set_trace()
+    corrupted_img_same = y_conv_display + params["sigma_sample"] * noise_same
+    corrupted_img_same_np = torch_to_np(corrupted_img_same)
 
     # Store psnr of the corrupted image
-    psnr_corr = psnr(corrupted_img_np, img_np)
+    psnr_corr = psnr(corrupted_img_same_np, img_np)
 
     # Create inpainted denoising dataset
-    corrupted_dataset = DenoisingInpaintingDataset(
+    corrupted_dataset = DenoisingDeblurringDataset(
         path=CLEAN_DATA,
         n_samples=params["n_samples"],
         noise_std=params["sigma_max_denoiser"],
         rng=RNG,
-        prop=params["prop"],
+        sigma_blurr=params["sigma_blurr"],
+        size_blurr=params["size_blurr"],
         sigma=params["sigma_sample"],
         dtype=DTYPE,
         device=DEVICE,
@@ -145,7 +142,7 @@ for params in permuts_params:
     )
 
     datasets = [corrupted_dataset, clean_dataset]
-    modes = ["denoising_inpainting", "denoising"]
+    modes = ["denoising_deblurring", "denoising"]
     file_name = "DnCNN_pnp"
 
     for dataset, mode in zip(datasets, modes):
@@ -192,16 +189,19 @@ for params in permuts_params:
         out = torch.zeros_like(img, dtype=DTYPE, device=DEVICE)
         with torch.no_grad():
             for iter in range(1, params["iter_pnp"] + 1):
-                grad = mask * (out - corrupted_img)
+                grad = F.conv2d(
+                    F.conv_transpose2d(out, blurr) - corrupted_img,
+                    blurr
+                )
                 out -= params["step_pnp"] * grad
                 out = torch.clip(denoiser(out), 0, 1)
-                loss = mse(out * mask, corrupted_img)
+                loss = mse(F.conv_transpose2d(out, blurr), corrupted_img)
 
         out_np = torch_to_np(out)
 
         # Store PSNR
         psnr_rec = psnr(out_np, img_np)
-        if mode == "denoising_inpainting":
+        if mode == "denoising_deblurring":
             psnr_rec_unsupervised = psnr_rec
         elif mode == "denoising":
             psnr_rec_supervised = psnr_rec

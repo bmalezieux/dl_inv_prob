@@ -3,42 +3,30 @@ Benchmark for inpainting with convolutional dictionary learning.
 """
 import datetime
 import itertools
-from dl_inv_prob.utils import determinist_inpainting, determinist_blurr
+from dl_inv_prob.utils import determinist_blurr
 import numpy as np
 import os
 import pandas as pd
 import random
 import time
 import torch
-import argparse
 
 from dl_inv_prob.common_utils import (
     torch_to_np,
 )
-from dl_inv_prob.dl import ConvolutionalInpainting, Deconvolution
+from dl_inv_prob.dl import Deconvolution
 from dl_inv_prob.utils import psnr, is_divergence
 from joblib import Memory
 from pathlib import Path
 from tqdm import tqdm
-
-parser = argparse.ArgumentParser()
-parser.add_argument('benchmark')
-args = parser.parse_args()
 
 EXPERIMENTS = Path(__file__).resolve().parents[1]
 DATA = os.path.join(EXPERIMENTS, "data")
 IMG = os.path.join(DATA, "flowers.png")
 RESULTS = os.path.join(EXPERIMENTS, "results")
 DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
-BENCHMARK_MODE = args.benchmark
+RESULT_FILE = "deblurring_single_image_supervised.csv"
 
-if BENCHMARK_MODE == "inpainting":
-    RESULT_FILE = "inpainting_single_image.csv"
-elif BENCHMARK_MODE == "deblurring":
-    RESULT_FILE = "deblurring_single_image.csv"
-else:
-    print("Not a benchmark")
-    exit(0)
 
 # Reproducibility
 SEED = 2022
@@ -56,10 +44,8 @@ torch.use_deterministic_algorithms(True)
 np.random.seed(SEED)
 random.seed(SEED)
 
-if BENCHMARK_MODE == "inpainting":
-    mem = Memory(location="./tmp_inpainting_supervised/", verbose=0)
-elif BENCHMARK_MODE == "deblurring":
-    mem = Memory(location="./tmp_deblurring_supervised/", verbose=0)
+
+mem = Memory(location="./tmp_deblurring_supervised/", verbose=0)
 
 
 ###########
@@ -67,14 +53,9 @@ elif BENCHMARK_MODE == "deblurring":
 ###########
 
 
-if BENCHMARK_MODE == "inpainting":
-    SOLVERS = {
-        "CDL_supervised": ConvolutionalInpainting,
-    }
-elif BENCHMARK_MODE == "deblurring":
-    SOLVERS = {
-        "CDL_supervised": Deconvolution,
-    }
+SOLVERS = {
+    "CDL_supervised": Deconvolution,
+}
 
 
 #########################
@@ -87,24 +68,13 @@ def extract_params(params):
     Extract relevant parameters for reconstruction
     """
 
-    if BENCHMARK_MODE == "inpainting":
-        params_solver = {
-            "name": params["name"],
-            "size": params["size"],
-            "rho": params["rho"],
-            "sigma": params["sigma"],
-            "size_blurr": 0,
-            "sigma_blurr": 0,
-        }
-    elif BENCHMARK_MODE == "deblurring":
-        params_solver = {
-            "name": params["name"],
-            "size": params["size"],
-            "rho": 0,
-            "sigma": params["sigma"],
-            "size_blurr": params["size_blurr"],
-            "sigma_blurr": params["sigma_blurr"],
-        }
+    params_solver = {
+        "name": params["name"],
+        "size": params["size"],
+        "sigma": params["sigma"],
+        "size_blurr": params["size_blurr"],
+        "sigma_blurr": params["sigma_blurr"],
+    }
 
     solver_name = params["name"]
 
@@ -167,28 +137,16 @@ def generate_algo(params):
 
 def data_generation(params):
 
-    if BENCHMARK_MODE == "inpainting":
-        size = params["size"]
-        rho = params["rho"]
-        sigma = params["sigma"]
-        img, img_inpainting, mask = determinist_inpainting(
-            IMG, prop=1 - rho, sigma=sigma, size=size
-        )
-        img = torch_to_np(img).squeeze()
-        img_corrupted = torch_to_np(img_inpainting).squeeze()
-        A = torch_to_np(mask).squeeze()
-
-    elif BENCHMARK_MODE == "deblurring":
-        size = params["size"]
-        sigma_blurr = params["sigma_blurr"]
-        size_blurr = params["size_blurr"]
-        sigma = params["sigma"]
-        img, img_blurred, blurr = determinist_blurr(
-            IMG, sigma_blurr, size_blurr, sigma=sigma, size=size
-        )
-        img = torch_to_np(img).squeeze()
-        img_corrupted = torch_to_np(img_blurred).squeeze()
-        A = blurr.numpy()
+    size = params["size"]
+    sigma_blurr = params["sigma_blurr"]
+    size_blurr = params["size_blurr"]
+    sigma = params["sigma"]
+    img, img_blurred, blurr = determinist_blurr(
+        IMG, sigma_blurr, size_blurr, sigma=sigma, size=size
+    )
+    img = torch_to_np(img).squeeze()
+    img_corrupted = torch_to_np(img_blurred).squeeze()
+    A = blurr.numpy()
 
     return img, img_corrupted, A
 
@@ -199,25 +157,17 @@ def learn_dictionary(params_dictionary):
     Learn a dictionary for a given set of parameters
     """
 
-    if BENCHMARK_MODE == "inpainting":
-        size = params_dictionary["size"]
-        img, img_inpainting, mask = determinist_inpainting(
-            IMG, prop=1, sigma=0, size=size
-        )
-        img = torch_to_np(img).squeeze()
-        mask = torch_to_np(mask).squeeze()
-        algo = generate_algo(params_dictionary)
-        algo.fit(img[None, :, :], np.ones_like(img[None, :, :]))
-
-    elif BENCHMARK_MODE == "deblurring":
-        size = params_dictionary["size"]
-        size_blurr = params_dictionary["size_blurr"]
-        img, img_corrupted, blurr = determinist_blurr(
-            IMG, 0, size_blurr, sigma=0, size=size
-        )
-        img = torch_to_np(img).squeeze()
-        algo = generate_algo(params_dictionary)
-        algo.fit(img[None, :, :], np.array(blurr)[None, :, :])
+    size = params_dictionary["size"]
+    size_blurr = params_dictionary["size_blurr"]
+    img, img_corrupted, blurr = determinist_blurr(
+        IMG, 0, size_blurr, sigma=0, size=size
+    )
+    img = torch_to_np(img).squeeze()
+    algo = generate_algo(params_dictionary)
+    algo.fit(
+        img[None, :, :],
+        np.array([1])[None, None, None, :]
+    )
 
     return algo
 
@@ -269,7 +219,6 @@ if __name__ == "__main__":
     hyperparams = {
         "size": [256],
         "sigma": [0.0, 0.02, 0.05, 0.1],
-        "rho": np.arange(0.1, 1.0, 0.1),
         "sigma_blurr": np.arange(0.1, 1.0, 0.1),
         "size_blurr": [10],
         "name": SOLVERS.keys(),

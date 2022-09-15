@@ -116,7 +116,7 @@ class DIPDeblurring(nn.Module):
 
     def fit(self, y, blurr, clean=None):
         y = np_to_torch(y).to(self.device).type(self.dtype)
-        blurr = np_to_torch(blurr).to(self.device).type(self.dtype)
+        blurr = np_to_torch(blurr[0]).to(self.device).type(self.dtype)
 
         height, width = y.shape[2:]
         height -= blurr.shape[2] - 1

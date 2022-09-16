@@ -7,6 +7,7 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms as T
 import hashlib
+import itertools
 
 
 def generate_dico(n_components, dim_signal, rng=None):
@@ -231,9 +232,39 @@ def is_divergence(rec, ref):
     mag_ref = np.abs(fshift_ref)
 
     ratio = (mag_rec / mag_ref - np.log(mag_rec / mag_ref) - 1)
-    is_div = ratio[~np.isnan(ratio)].sum()
+    is_div = ratio[~np.isnan(ratio)].mean()
 
     return is_div
+
+
+def discrepancy_measure(y):
+    """
+    Discrepancy measure in a spectrum
+
+    Parameters
+    ----------
+    y : ndarray, shape (height, width)
+        image
+
+    Returns
+    -------
+    float
+        score
+    """
+
+    u = np.log(np.abs(np.fft.fft2(y)))
+    u /= np.linalg.norm(u)
+    s = 0
+    for i, j, k, l in itertools.product(
+        np.arange(u.shape[0]),
+        np.arange(u.shape[1]),
+        np.arange(u.shape[0]),
+        np.arange(u.shape[1])):
+        s += u[i, j] * u[k, l] * (
+            np.abs(np.log(1 + i) - np.log(1 + j))
+            + np.abs(np.log(1 + k) - np.log(1 + l))
+        )
+    return s
 
 
 def create_patches_overlap(im, m, A=None):

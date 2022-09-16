@@ -56,7 +56,7 @@ for i, sigma in enumerate(pd.unique(data_256["sigma"])):
                 & (data_supervised_256["sigma"] == sigma)
                 & (data_supervised_256["name"] == name)
             ]["is_rec"].min()
-            is_div.append(current_is)
+            is_div.append(np.log(current_is))
         axs[1, i].plot(list(pd.unique(data_supervised_256["sigma_blurr"]))[:-1], is_div, label=name)
     for name in pd.unique(data_256["name"]):
         is_div = []
@@ -66,13 +66,13 @@ for i, sigma in enumerate(pd.unique(data_256["sigma"])):
                 & (data_256["sigma"] == sigma)
                 & (data_256["name"] == name)
             ]["is_rec"].min()
-            is_div.append(current_is)
+            is_div.append(np.log(current_is))
         axs[1, i].plot(list(pd.unique(data_256["sigma_blurr"]))[:-1], is_div, label=name)
 
     axs[1, i].set_title(f"SNR {round(10 * np.log(0.205 ** 2 / (sigma ** 2)) / np.log(10), 0)}")
     axs[1, i].grid()
     if i == 0:
-        axs[1, i].set_ylabel("IS div.")
+        axs[1, i].set_ylabel("log(IS div.)")
     axs[1, i].set_xlabel("Sigma blurr")
 
 legend = axs[0, 0].legend()
@@ -80,6 +80,6 @@ handles, labels = axs[0, 0].get_legend_handles_labels()
 legend.remove()
 fig.legend(labels=labels, handles=handles, loc="center right", bbox_to_anchor=(1.23, 0.56))
 plt.tight_layout()
-plt.savefig("../figures/ideblurring_single_image_full.pdf")
+plt.savefig("../figures/deblurring_single_image_full.pdf")
 
 # %%

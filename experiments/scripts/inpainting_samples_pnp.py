@@ -26,7 +26,7 @@ import itertools
 
 start_time = time.time()
 
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.float32
 TRAINING = True
 
@@ -85,21 +85,6 @@ mse = nn.MSELoss()
 dict_results = {}
 
 for params in permuts_params:
-    
-    # mask = (
-    #     torch.rand(
-    #         img.shape,
-    #         generator=RNG,
-    #         dtype=DTYPE,
-    #         device=DEVICE
-    #     ) > params["prop"]
-    # )
-    # noise = torch.randn(img.shape, generator=RNG, dtype=DTYPE, device=DEVICE)
-    # corrupted_img = img * mask + params["sigma_sample"] * noise
-    # corrupted_img_np = torch_to_np(corrupted_img)
-    
-    # import ipdb
-    # ipdb.set_trace()
 
     # Corrupt the test image with a binary mask and noise
     img, corrupted_img, mask = determinist_inpainting(
@@ -146,7 +131,7 @@ for params in permuts_params:
 
     datasets = [corrupted_dataset, clean_dataset]
     modes = ["denoising_inpainting", "denoising"]
-    file_name = "DnCNN_pnp"
+    file_name = "DnCNN_pnp_inpainting"
 
     for dataset, mode in zip(datasets, modes):
 

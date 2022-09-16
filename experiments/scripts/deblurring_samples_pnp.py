@@ -27,7 +27,7 @@ import itertools
 
 start_time = time.time()
 
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.float32
 TRAINING = True
 
@@ -143,7 +143,7 @@ for params in permuts_params:
 
     datasets = [corrupted_dataset, clean_dataset]
     modes = ["denoising_deblurring", "denoising"]
-    file_name = "DnCNN_pnp"
+    file_name = "DnCNN_pnp_deblurring"
 
     for dataset, mode in zip(datasets, modes):
 

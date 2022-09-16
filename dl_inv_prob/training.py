@@ -37,7 +37,7 @@ def check_loss(model, loss_fn, dataloader, device, mode="denoising"):
                 output = model(noisy)
                 loss += loss_fn(
                     F.conv2d(output, torch.flip(blurr, dims=[2, 3]), padding="same"),
-                    target
+                    F.conv2d(target, torch.flip(blurr, dims=[2, 3]), padding="same")
                 ).item()
             else:
                 loss += loss_fn(model, batch.to(device)).item()
@@ -115,7 +115,7 @@ def train(
                 output = model(noisy)
                 loss = loss_fn(
                     F.conv2d(output, torch.flip(blurr, dims=[2, 3]), padding="same"),
-                    target
+                    F.conv2d(target, torch.flip(blurr, dims=[2, 3]), padding="same")
                 )
             else:
                 loss = loss_fn(model, batch.to(device))

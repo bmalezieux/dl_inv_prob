@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 # %%
-results = pd.read_csv("../results/results_inpainting.csv")
+results = pd.read_csv("../results/invprob_dl.csv")
 results.head()
 
 values_p = results["p"].unique()

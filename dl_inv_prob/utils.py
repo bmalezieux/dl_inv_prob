@@ -224,12 +224,10 @@ def is_divergence(rec, ref):
     """
 
     f_rec = np.fft.fft2(rec)
-    fshift_rec = np.fft.fftshift(f_rec)
-    mag_rec = np.abs(fshift_rec)
+    mag_rec = np.abs(f_rec)
 
     f_ref = np.fft.fft2(ref)
-    fshift_ref = np.fft.fftshift(f_ref)
-    mag_ref = np.abs(fshift_ref)
+    mag_ref = np.abs(f_ref)
 
     ratio = (mag_rec / mag_ref - np.log(mag_rec / mag_ref) - 1)
     is_div = ratio[~np.isnan(ratio)].mean()
@@ -259,7 +257,8 @@ def discrepancy_measure(y):
         np.arange(u.shape[0]),
         np.arange(u.shape[1]),
         np.arange(u.shape[0]),
-        np.arange(u.shape[1])):
+        np.arange(u.shape[1])
+    ):
         s += u[i, j] * u[k, l] * (
             np.abs(np.log(1 + i) - np.log(1 + j))
             + np.abs(np.log(1 + k) - np.log(1 + l))

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 plt.style.use('figures_style_full.mplstyle')
 
-data = pd.read_csv("../results/inpainting_single_image_legacy.csv")
+data = pd.read_csv("../results/inpainting_single_image.csv")
 data_256 = data[data["size"] == 256]
 
 # %%
@@ -56,7 +56,7 @@ for i, sigma in enumerate(pd.unique(data_256["sigma"])):
                 & (data_supervised_256["sigma"] == sigma)
                 & (data_supervised_256["name"] == name)
             ]["is_rec"].min()
-            is_div.append(np.log(current_is))
+            is_div.append(current_is)
         axs[1, i].plot(1 - np.array(list(pd.unique(data_supervised_256["rho"]))[:-1]), is_div, label=name)
     for name in pd.unique(data_256["name"]):
         is_div = []
@@ -66,13 +66,13 @@ for i, sigma in enumerate(pd.unique(data_256["sigma"])):
                 & (data_256["sigma"] == sigma)
                 & (data_256["name"] == name)
             ]["is_rec"].min()
-            is_div.append(np.log(current_is))
+            is_div.append(current_is)
         axs[1, i].plot(1 - np.array(list(pd.unique(data_256["rho"]))[:-1]), is_div, label=name)
 
     axs[1, i].set_title(f"SNR {round(10 * np.log(0.205 ** 2 / (sigma ** 2)) / np.log(10), 0)}")
     axs[1, i].grid()
     if i == 0:
-        axs[1, i].set_ylabel("log(IS div.)")
+        axs[1, i].set_ylabel("IS div.")
     axs[1, i].set_xlabel("Prop. of pixels")
 
 legend = axs[0, 0].legend()
@@ -81,5 +81,51 @@ legend.remove()
 fig.legend(labels=labels, handles=handles, loc="center right", bbox_to_anchor=(1.23, 0.56))
 plt.tight_layout()
 plt.savefig("../figures/inpainting_single_image_full.pdf")
+plt.clf()
+# %%
+
+fig, axs = plt.subplots(1, 2)
+
+# PSNR
+for i, sigma in enumerate(pd.unique(data_256["sigma"])[[1, 3]]):
+    for name in pd.unique(data_supervised_256["name"]):
+        psnr = []
+        for rho in list(pd.unique(data_supervised_256["rho"]))[:-1]:
+            current_psnr = data_supervised_256[
+                (data_supervised_256["rho"] == rho)
+                & (data_supervised_256["sigma"] == sigma)
+                & (data_supervised_256["name"] == name)
+            ]["psnr_rec"].max()
+            psnr.append(current_psnr)
+        axs[i].plot(1 - np.array(list(pd.unique(data_supervised_256["rho"]))[:-1]), psnr, label=name)
+    for name in pd.unique(data_256["name"]):
+        psnr = []
+        for rho in list(pd.unique(data_256["rho"]))[:-1]:
+            current_psnr = data_256[
+                (data_256["rho"] == rho)
+                & (data_256["sigma"] == sigma)
+                & (data_256["name"] == name)
+            ]["psnr_rec"].max()
+            psnr.append(current_psnr)
+        axs[i].plot(1 - np.array(list(pd.unique(data_256["rho"]))[:-1]), psnr, label=name)
+
+    axs[i].set_title(f"SNR {round(10 * np.log(0.205 ** 2 / (sigma ** 2)) / np.log(10), 0)}")
+    axs[i].grid()
+    if i == 0:
+        axs[i].set_ylabel("PSNR (dB)")
+    axs[i].set_xlabel("Prop. of missing pixels")
+    if i == 0:
+        axs[i].set_ylim([15, 35])
+        axs[i].set_yticks([15, 20, 25, 30, 35])
+    else:
+        axs[i].set_ylim([15, 25])
+        axs[i].set_yticks([15, 20, 25])
+
+legend = axs[0].legend()
+handles, labels = axs[0].get_legend_handles_labels()
+legend.remove()
+fig.legend(labels=labels, handles=handles, loc="center right", bbox_to_anchor=(1.23, 0.56))
+plt.tight_layout()
+plt.savefig("../figures/inpainting_single_image.pdf")
 
 # %%

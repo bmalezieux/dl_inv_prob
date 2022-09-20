@@ -8,7 +8,7 @@ font.size : 8
 xtick.labelsize : 8
 ytick.labelsize : 8
 
-legend.fontsize : 8
-legend.title_fontsize : 8
+legend.fontsize : 6
+legend.title_fontsize : 6
 
 figure.figsize : 2.2, 1.5

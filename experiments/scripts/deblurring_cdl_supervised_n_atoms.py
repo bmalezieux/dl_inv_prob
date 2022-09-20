@@ -141,7 +141,7 @@ def run_test(params):
 if __name__ == "__main__":
 
     hyperparams = {
-        "n_atoms": np.arange(5, 55, 5),
+        "n_atoms": np.arange(1, 21, 1),
         "lambd": [0.01, 0.05, 0.1],
         "dim_atoms": [10],
         "n_iter": [100],

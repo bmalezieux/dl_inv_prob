@@ -1,47 +1,102 @@
 import numpy as np
 import torch
+import os
+import itertools
+import pandas as pd
 
-from tqdm import tqdm
 from dl_inv_prob.dl import DictionaryLearning
 from dl_inv_prob.utils import generate_dico, generate_data, recovery_score
+from pathlib import Path
+from joblib import Memory
+from tqdm import tqdm
+
+N_EXP = 5
+SEED = 2022
+EXPERIMENTS = Path(__file__).resolve().parents[1]
+DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
+RESULTS = os.path.join(EXPERIMENTS, "results/partial_rec.csv")
+mem = Memory(location='./tmp_partial_rec/', verbose=0)
 
 
-DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
-N_EXP = 10
-RNG = np.random.default_rng(100)
+@mem.cache
+def run_test(params):
 
-dim_signal = 100
-n_components = 100
-N_data_total = 10000
+    scores = []
+    seed = params["seed"]
+    rng = np.random.default_rng(seed)
+    sparsity = params["sparsity"]
+    dim_measurement = params["dim_measurement"]
+    n_components = params["n_components"]
+    dim_signal = params["dim_signal"]
+    n_data = params["n_data"]
 
-D = generate_dico(n_components, dim_signal, rng=RNG)
-D_init = generate_dico(n_components, dim_signal, rng=RNG)
+    for _ in range(N_EXP):
 
-spars = [0.03, 0.1, 0.2, 0.3]
-dim_m = np.linspace(10, n_components, 20, dtype=int)
+        D = generate_dico(n_components, dim_signal, rng=rng)
+        D_init = generate_dico(n_components, dim_signal, rng=rng)
 
-scores = np.zeros((N_EXP, len(spars), len(dim_m)))
+        A = rng.normal(size=(1, dim_measurement, dim_signal))
+        A /= np.linalg.norm(A, axis=1, keepdims=True)
 
-for k in tqdm(range(N_EXP)):
-    for i, s in enumerate(spars):
-        for j, m in enumerate(dim_m):
+        Y, _ = generate_data(A @ D, N=n_data, s=sparsity, rng=rng)
 
-            A = RNG.normal(size=(1, m, dim_signal))
-            A /= np.linalg.norm(A, axis=1, keepdims=True)
+        dl = DictionaryLearning(
+            n_components,
+            init_D=D_init,
+            device=DEVICE,
+            rng=rng,
+            lambd=params["lambd"]
+        )
+        dl.fit(Y, A)
 
-            Y, _ = generate_data(A @ D, N=N_data_total, s=s, rng=RNG)
+        D_sol = dl.D_
+        scores.append(recovery_score(D_sol, D))
 
-            dl = DictionaryLearning(
-                n_components,
-                init_D=D_init,
-                device=DEVICE,
-                rng=RNG
-            )
-            dl.fit(Y, A)
+    results = {
+        "score_avg": np.mean(scores),
+        "score_q1": np.quantile(scores, q=0.25),
+        "score_q3": np.quantile(scores, q=0.75)
+    }
 
-            D_sol = dl.D_
-            scores[k, i, j] = recovery_score(D_sol, D)
+    return results
 
-np.save("../results/scores_partial.npy", scores)
-np.save("../results/dim_m_partial.npy", dim_m)
-np.save("../results/spars_partial.npy", spars)
+
+if __name__ == "__main__":
+
+    hyperparams = {
+        "sparsity": [0.03, 0.1, 0.2, 0.3],
+        "dim_measurement": np.linspace(10, 100, 20, dtype=int),
+        "lambd": [0.01, 0.05, 0.1],
+        "seed": [SEED],
+        "n_components": [100],
+        "dim_signal": [100],
+        "n_data": [10000]
+    }
+
+    keys, values = zip(*hyperparams.items())
+    permuts_params = [dict(zip(keys, v)) for v in itertools.product(*values)]
+
+    dico_results = {}
+
+    for params in tqdm(permuts_params):
+        try:
+            results = run_test(params)
+
+            # Storing results
+            for key in params.keys():
+                if key not in dico_results:
+                    dico_results[key] = [params[key]]
+                else:
+                    dico_results[key].append(params[key])
+
+            for key in results.keys():
+                if key not in dico_results:
+                    dico_results[key] = [results[key]]
+                else:
+                    dico_results[key].append(results[key])
+
+        except (KeyboardInterrupt, SystemExit):
+            raise
+
+    results = pd.DataFrame(dico_results)
+    results.to_csv(RESULTS)

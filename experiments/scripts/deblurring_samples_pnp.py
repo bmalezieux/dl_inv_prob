@@ -24,6 +24,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from pathlib import Path
 import itertools
+from tqdm import tqdm
 
 start_time = time.time()
 
@@ -36,12 +37,14 @@ TRAINING = True
 EXPERIMENTS = Path(__file__).resolve().parents[1]
 DATA_PATH = os.path.join(EXPERIMENTS, "data")
 CLEAN_DATA = os.path.join(DATA_PATH, "Train400")
+TEST_DATA = os.path.join(DATA_PATH, "Train400_test")
 IMG_PATH = os.path.join(DATA_PATH, "flowers.png")
 MODELS_PATH = os.path.join(EXPERIMENTS, "../dl_inv_prob/models/pretrained")
 CORRUPTED_DENOISER_NAME = "DnCNN_denoising_deblurring"
 CLEAN_DENOISER_NAME = "DnCNN_denoising"
 RESULTS = os.path.join(EXPERIMENTS, "results/deblurring_pnp.csv")
 SIZE = 180
+N_TEST = 20
 
 # Hyperparameters
 
@@ -145,6 +148,9 @@ for params in permuts_params:
     modes = ["denoising_deblurring", "denoising"]
     file_name = "DnCNN_pnp_deblurring"
 
+    psnr_rec_supervised = 0
+    psnr_rec_unsupervised = 0
+
     for dataset, mode in zip(datasets, modes):
 
         train_dataloader, val_dataloader = train_val_dataloaders(
@@ -186,28 +192,64 @@ for params in permuts_params:
         type = "clean" if mode == "denoising" else "corrupted"
         print(f"PnP with the {type} denoiser")
 
-        out = torch.zeros_like(img, dtype=DTYPE, device=DEVICE)
-        with torch.no_grad():
-            for iter in range(1, params["iter_pnp"] + 1):
-                grad = F.conv2d(
-                    F.conv_transpose2d(out, blurr) - corrupted_img,
-                    blurr
-                )
-                out -= params["step_pnp"] * grad
-                out = torch.clip(denoiser(out), 0, 1)
-                loss = mse(F.conv_transpose2d(out, blurr), corrupted_img)
+        psnr_corr = 0
 
-        out_np = torch_to_np(out)
+        for filename in tqdm(os.listdir(TEST_DATA)[:N_TEST]):
 
-        # Store PSNR
-        psnr_rec = psnr(out_np, img_np)
-        if mode == "denoising_deblurring":
-            psnr_rec_unsupervised = psnr_rec
-        elif mode == "denoising":
-            psnr_rec_supervised = psnr_rec
+            img_test, corrupted_img_test, blurr_test = determinist_blurr(
+                os.path.join(TEST_DATA, filename),
+                params["sigma_blurr"],
+                params["size_blurr"],
+                params["sigma_sample"],
+                size=SIZE,
+                dtype=DTYPE,
+                device=DEVICE
+            )
 
-        print(f"psnr_rec = {psnr_rec:.2f}, mode={mode}")
-        print(f"psnr_corr = {psnr_corr:.2f}")
+            y_conv_display = F.conv2d(
+                img_test[None, :, :],
+                torch.flip(blurr_test[None, :, :], dims=[2, 3]),
+                padding="same"
+            )
+            noise_same = torch.randn(y_conv_display.shape, generator=RNG, dtype=DTYPE, device=DEVICE)
+
+            img_test = img_test[None, :, :]
+            blurr_test = blurr_test[None, :, :]
+            corrupted_img_test = corrupted_img_test[None, :, :]
+            corrupted_img_test_np = torch_to_np(corrupted_img_test)
+            img_test_np = torch_to_np(img_test)
+
+            corrupted_img_test_same = y_conv_display + params["sigma_sample"] * noise_same
+            corrupted_img_test_same_np = torch_to_np(corrupted_img_test_same)
+
+            out = torch.zeros_like(img_test, dtype=DTYPE, device=DEVICE)
+            with torch.no_grad():
+                for iter in range(1, params["iter_pnp"] + 1):
+                    grad = F.conv2d(
+                        F.conv_transpose2d(out, blurr) - corrupted_img_test,
+                        blurr
+                    )
+                    out -= params["step_pnp"] * grad
+                    out = torch.clip(denoiser(out), 0, 1)
+                    loss = mse(F.conv_transpose2d(out, blurr_test), corrupted_img_test)
+
+            out_np = torch_to_np(out)
+
+            # Store PSNR
+            psnr_rec = psnr(out_np, img_test_np)
+            if mode == "denoising_deblurring":
+                psnr_rec_unsupervised += psnr_rec
+            elif mode == "denoising":
+                psnr_rec_supervised += psnr_rec
+            psnr_corr += psnr(corrupted_img_test_same_np, img_test_np)
+
+    psnr_rec_unsupervised /= N_TEST
+    psnr_rec_supervised /= N_TEST
+    psnr_corr /= N_TEST
+
+    print(f"psnr_rec_unsupervised = {psnr_rec_unsupervised:.2f}")
+    print(f"psnr_rec_supervised = {psnr_rec_supervised:.2f}")
+    print(f"psnr_corr = {psnr_corr:.2f}")
 
     # Saving results
     results = {

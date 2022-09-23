@@ -1,37 +1,55 @@
+# %%
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-
+import pandas as pd
 
 plt.style.use('figures_style_small.mplstyle')
+data = pd.read_csv("../results/partial_rec.csv")
 
-scores = np.load("../results/scores_partial.npy")
-dim_m = np.load("../results/dim_m_partial.npy")
-spars = np.load("../results/spars_partial.npy")
+# %%
+
+n = 100
 
 constant_color = 3
-c = np.arange(1, len(spars) + constant_color)
+c = np.arange(1, len(pd.unique(data["sparsity"])) + constant_color)
 norm = mpl.colors.Normalize(vmin=c.min(), vmax=c.max())
 cmap = mpl.cm.ScalarMappable(norm=norm, cmap=mpl.cm.Blues)
 cmap.set_array([])
 
-
-n = 100
-
-for i in range(scores.shape[1]):
-    plt.plot(dim_m, scores[:, i].mean(axis=0),
-             label=spars[i], color=cmap.to_rgba(i + constant_color))
+for i, spars in enumerate(pd.unique(data["sparsity"])):
+    scores = []
+    scores_q1 = []
+    scores_q3 = []
+    for m in pd.unique(data["dim_measurement"]):
+        current_data = data[
+            (data["dim_measurement"] == m)
+            & (data["sparsity"] == spars)
+        ]
+        index_score = current_data["score_avg"].argmax()
+        scores.append(current_data.iloc[index_score]["score_avg"])
+        scores_q1.append(current_data.iloc[index_score]["score_q1"])
+        scores_q3.append(current_data.iloc[index_score]["score_q3"])
+    plt.plot(
+        pd.unique(data["dim_measurement"]),
+        scores,
+        label=spars,
+        color=cmap.to_rgba(i + constant_color)
+    )
     plt.fill_between(
-        dim_m,
-        np.quantile(scores[:, i], q=0.1, axis=0),
-        np.quantile(scores[:, i], q=0.9, axis=0),
+        pd.unique(data["dim_measurement"]),
+        scores_q1,
+        scores_q3,
         alpha=0.2,
-        color=cmap.to_rgba(i+1)
+        color=cmap.to_rgba(i+constant_color)
     )
 
-plt.plot(dim_m, np.sqrt(dim_m / n), label="Perfect", color="black")
-plt.xlabel("Dim. measurements")
+plt.plot(pd.unique(data["dim_measurement"]), np.sqrt(pd.unique(data["dim_measurement"]) / n), label="Perfect", color="black")
+plt.legend(title="Sparsity", loc="lower right")
+plt.xlabel("Dim. m")
 plt.ylabel("Rec. score")
 plt.grid()
-plt.legend(title="Sparsity", loc="lower right")
 plt.savefig("../figures/score_partial_rec.pdf")
+
+
+# %%

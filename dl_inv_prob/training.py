@@ -1,7 +1,3 @@
-import datetime
-import numpy as np
-import os
-import time
 import torch
 import torch.optim
 import torch.nn.functional as F
@@ -51,8 +47,6 @@ def train(
     loss_fn,
     train_dataloader,
     val_dataloader,
-    file_name,
-    model_path,
     mode="denoising",
     optimizer=None,
     scheduler=None,
@@ -78,14 +72,6 @@ def train(
 
     losses = []
     val_losses = []
-
-    best_val_loss = np.inf
-
-    initial_val_loss = check_loss(
-        model, loss_fn, val_dataloader, device, mode=mode
-    )
-
-    start_time = time.time()
 
     for epoch in range(1, n_epochs + 1):
         for batch in train_dataloader:
@@ -131,21 +117,6 @@ def train(
         )
         val_losses.append(val_loss)
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(
-                model.state_dict(), os.path.join(model_path, file_name + ".pt")
-            )
-
         scheduler.step(val_loss)
-
-        # if epoch % show_every == 0:
-        #     delta = time.time() - start_time
-        #     delta = str(datetime.timedelta(seconds=delta))
-        #     print(
-        #         f"Epoch {epoch}, train_loss {loss.item():.4f}, "
-        #         + f"val_loss {val_loss:.4f}"
-        #     )
-        #     print(f"elapsed time: {delta}")
 
     return model, losses, val_losses

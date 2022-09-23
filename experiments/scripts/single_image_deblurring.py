@@ -1,14 +1,12 @@
 """
 Benchmark for inpainting and deblurring on a single image.
 """
-import datetime
 import itertools
 from dl_inv_prob.utils import determinist_blurr
 import numpy as np
 import os
 import pandas as pd
 import random
-import time
 import torch
 
 from dl_inv_prob.common_utils import (
@@ -16,7 +14,7 @@ from dl_inv_prob.common_utils import (
 )
 from dl_inv_prob.dl import Deconvolution
 from dl_inv_prob.dip import DIPDeblurring
-from dl_inv_prob.utils import psnr, is_divergence
+from dl_inv_prob.utils import psnr, is_divergence, split_psnr
 from joblib import Memory
 from pathlib import Path
 from tqdm import tqdm
@@ -191,27 +189,21 @@ def run_test(params):
     img, img_corrupted, A = data_generation(params)
 
     # Reconstruction
-    start = time.time()
     algo = generate_algo(params)
     algo.fit(img_corrupted[None, :, :], A[None, :, :])
     rec = algo.rec().squeeze()
     rec = np.clip(rec, 0, 1)
-    stop = time.time()
 
     # Result
     psnr_rec = psnr(rec, img)
-    # psnr_corr = psnr(img_corrupted, img)
     is_rec = is_divergence(rec, img)
-    # is_corr = is_divergence(img_corrupted, img)
-    delta = stop - start
-    delta = str(datetime.timedelta(seconds=delta))
+    psnr_ran, psnr_ker = split_psnr(rec, img, A[0], params["sigma_blurr"])
 
     results = {
-        # "psnr_corr": psnr_corr,
         "psnr_rec": psnr_rec,
+        "psnr_ran": psnr_ran,
+        "psnr_ker": psnr_ker,
         "is_rec": is_rec,
-        # "is_corr": is_corr,
-        "time": delta,
     }
 
     return results

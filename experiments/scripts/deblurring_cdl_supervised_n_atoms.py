@@ -16,12 +16,12 @@ from PIL import Image
 from pathlib import Path
 from joblib import Memory
 
-
+N_EXP = 20
 EXPERIMENTS = Path(__file__).resolve().parents[1]
 RESULTS = os.path.join(EXPERIMENTS, "results")
 DATA = os.path.join(EXPERIMENTS, "data")
 IMG = os.path.join(DATA, "flowers.png")
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
 RESULT_FILE = "deblurring_cdl_supervised_n_atoms.csv"
 
 
@@ -94,40 +94,55 @@ def run_test(params):
         params["size_image"]
     ) 
 
-    # Dictionary learning supervised
-    cdl = Deconvolution(
-        params["n_atoms"],
-        init_D=None,
-        device=DEVICE,
-        rng=NP_RNG,
-        atom_height=params["dim_atoms"],
-        atom_width=params["dim_atoms"],
-        lambd=params["lambd"]
-    )
-    cdl.fit(y[None, :, :], np.array([1])[None, None, None, :])
+    psnr_recs = []
+    is_recs = []
+    avg_discrepancies = []
+    avg_discrepancies_weighted = []
 
-    # Reconstruction
-    rec = cdl.rec(y_conv[None, :, :], kernel[None, None, :, :]).squeeze()
-    rec = np.clip(rec, 0, 1)
+    for _ in range(N_EXP):
 
-    D = cdl.D_
-    discrepancy_mean = 0
-    for i in range(D.shape[0]):
-        discrepancy_mean += discrepancy_measure(D[i, 0])
-    discrepancy_mean /= D.shape[0]
+        # Dictionary learning supervised
+        cdl = Deconvolution(
+            params["n_atoms"],
+            init_D=None,
+            device=DEVICE,
+            rng=NP_RNG,
+            atom_height=params["dim_atoms"],
+            atom_width=params["dim_atoms"],
+            lambd=params["lambd"]
+        )
+        cdl.fit(y[None, :, :], np.array([1])[None, None, None, :])
+        out = cdl.forward(cdl.Y_tensor)
 
-    # Result
-    psnr_rec = psnr(rec, y)
-    # psnr_corr = psnr(img_corrupted, img)
-    is_rec = is_divergence(rec, y)
-    # is_corr = is_divergence(img_corrupted, img)
+        # Reconstruction
+        rec = cdl.rec(y_conv[None, :, :], kernel[None, None, :, :]).squeeze()
+        rec = np.clip(rec, 0, 1)
+
+        weights = torch.abs(out).sum(axis=(2, 3)).to("cpu").detach().numpy()[0]
+        D = cdl.D_
+        discrepancy_mean = 0
+        discrepancy_mean_weighted = 0
+        for i in range(D.shape[0]):
+            discrepancy_mean += discrepancy_measure(D[i, 0])
+            discrepancy_mean_weighted += discrepancy_measure(D[i, 0]) * weights[i]
+        discrepancy_mean /= D.shape[0]
+        discrepancy_mean_weighted /= weights.sum()
+
+        # Result
+        psnr_rec = psnr(rec, y)
+        is_rec = is_divergence(rec, y)
+
+        psnr_recs.append(psnr_rec)
+        is_recs.append(is_rec)
+        avg_discrepancies.append(discrepancy_mean)
+        if not np.isnan(discrepancy_mean_weighted):
+            avg_discrepancies_weighted.append(discrepancy_mean_weighted)
 
     results = {
-        # "psnr_corr": psnr_corr,
-        "psnr_rec": psnr_rec,
-        "is_rec": is_rec,
-        "discrepancy": discrepancy_mean
-        # "is_corr": is_corr,
+        "psnr_rec": np.mean(psnr_recs),
+        "is_rec": np.mean(is_recs),
+        "discrepancy": np.mean(avg_discrepancies),
+        "discrepancy_weighted": np.mean(avg_discrepancies_weighted)
     }
 
     return results
@@ -141,12 +156,12 @@ def run_test(params):
 if __name__ == "__main__":
 
     hyperparams = {
-        "n_atoms": np.arange(1, 21, 1),
-        "lambd": [0.01, 0.05, 0.1],
-        "dim_atoms": [10],
+        "n_atoms": np.linspace(2, 20, num=10, dtype=int),
+        "lambd": [1.],
+        "dim_atoms": [20],
         "n_iter": [100],
         "sigma_blurr": [0.3],
-        "size_kernel": [20],
+        "size_kernel": [10],
         "img_path": [IMG],
         "size_image": [256]
     }

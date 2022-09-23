@@ -1,14 +1,12 @@
 """
 Benchmark for inpainting with convolutional dictionary learning.
 """
-import datetime
 import itertools
 from dl_inv_prob.utils import determinist_inpainting
 import numpy as np
 import os
 import pandas as pd
 import random
-import time
 import torch
 
 from dl_inv_prob.common_utils import (
@@ -168,25 +166,20 @@ def run_test(params):
     algo = learn_dictionary(params_learning)
 
     # Reconstruction
-    start = time.time()
     rec = algo.rec(img_inpainting[None, :, :], mask[None, :, :]).squeeze()
     rec = np.clip(rec, 0, 1)
-    stop = time.time()
 
     # Result
     psnr_rec = psnr(rec, img)
-    psnr_corr = psnr(img_inpainting, img)
+    psnr_rec_ker = psnr(rec[mask == 0], img[mask == 0])
+    psnr_rec_range = psnr(rec[mask == 1], img[mask == 1])
     is_rec = is_divergence(rec, img)
-    is_corr = is_divergence(img_inpainting, img)
-    delta = stop - start
-    delta = str(datetime.timedelta(seconds=delta))
 
     results = {
-        "psnr_corr": psnr_corr,
         "psnr_rec": psnr_rec,
+        "psnr_rec_ker": psnr_rec_ker,
+        "psnr_rec_range": psnr_rec_range,
         "is_rec": is_rec,
-        "is_corr": is_corr,
-        "time": delta,
     }
 
     return results

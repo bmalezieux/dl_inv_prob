@@ -9,13 +9,14 @@ from torch.utils.data.sampler import SubsetRandomSampler
 import torchvision.transforms as T
 import torch.nn.functional as F
 
+
 def make_dataset(path, n_samples=None):
     """Return a list of image paths."""
     images = []
     for img in os.listdir(path):
         if n_samples is not None and len(images) >= n_samples:
             break
-        if img.endswith(".png"):
+        if img.endswith(".png") or img.endswith(".JPEG") or img.endswith(".jpeg"):
             img_path = os.path.join(path, img)
             images.append(img_path)
 

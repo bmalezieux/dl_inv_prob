@@ -1,7 +1,7 @@
 import numpy as np
 from PIL import Image
 from scipy.optimize import linear_sum_assignment
-from scipy.signal import correlate2d
+from scipy.signal import correlate2d, convolve
 from sklearn.datasets import load_digits
 import torch
 import torch.nn.functional as F
@@ -184,7 +184,7 @@ def combine_patches(patches):
     return img
 
 
-def psnr(rec, ref):
+def psnr(rec, ref, d=1.):
     """
     Compute the peak signal-to-noise ratio for grey images in [0, 1].
 
@@ -201,9 +201,37 @@ def psnr(rec, ref):
         psnr of the reconstructed image
     """
     mse = np.square(rec - ref).mean()
-    psnr = 10 * np.log10(1 / mse)
+    psnr = 10 * np.log10(d ** 2 / mse)
 
     return psnr
+
+
+def split_psnr(rec, img, kernel, sigma):
+    size_x, size_y = img.shape
+
+    dirac_image = np.zeros((size_x, size_y))
+    dirac_image[size_x // 2, size_y // 2] = 1
+
+    result = convolve(dirac_image, kernel, mode="same")
+
+    f_dirac = np.fft.fft2(result)
+    mag_dirac = np.abs(f_dirac)
+
+    value = np.exp(-0.5 * 4) / np.sqrt(2 * np.pi * sigma ** 2)
+
+    ran_kernel = (mag_dirac > value)
+    ker_kernel = (mag_dirac < value)
+
+    f_rec = np.fft.fft2(rec)
+    f_img = np.fft.fft2(img)
+
+    rec_ran = np.clip(np.abs(np.fft.ifft2(f_rec * ran_kernel)), 0, 1)
+    rec_ker = np.clip(np.abs(np.fft.ifft2(f_rec * ker_kernel)), 0, 1)
+
+    img_ran = np.clip(np.abs(np.fft.ifft2(f_img * ran_kernel)), 0, 1)
+    img_ker = np.clip(np.abs(np.fft.ifft2(f_img * ker_kernel)), 0, 1)
+
+    return psnr(rec_ran, img_ran, d=0.95), psnr(rec_ker, img_ker, d=0.05)
 
 
 def is_divergence(rec, ref):
@@ -252,16 +280,19 @@ def discrepancy_measure(y):
 
     u = np.log(np.abs(np.fft.fft2(y)))
     u /= np.linalg.norm(u)
+    v = np.zeros(u.shape[0] + u.shape[1])
     s = 0
-    for i, j, k, l in itertools.product(
+    for i, j in itertools.product(
         np.arange(u.shape[0]),
         np.arange(u.shape[1]),
-        np.arange(u.shape[0]),
-        np.arange(u.shape[1])
     ):
-        s += u[i, j] * u[k, l] * (
+        v[i + j] += u[i, j]
+    for i, j in itertools.product(
+        np.arange(v.shape[0]),
+        np.arange(v.shape[0]),
+    ):
+        s += v[i] * v[j] * (
             np.abs(np.log(1 + i) - np.log(1 + j))
-            + np.abs(np.log(1 + k) - np.log(1 + l))
         )
     return s
 

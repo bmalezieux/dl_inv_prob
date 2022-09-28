@@ -11,6 +11,8 @@ pretrained
 *.pt
 
 # Data
+imagewoof
+imagewoof_test
 !experiments/data/flowers.png
 
 # VS code

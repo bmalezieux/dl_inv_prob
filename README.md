@@ -1,4 +1,4 @@
-# Dictionary learning in inverse problems
+# Prior learning in unsupervised inverse problems
 
 ## installation
 ```

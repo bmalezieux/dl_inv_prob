@@ -29,7 +29,9 @@ ax1.axis('off')
 for i, rho in enumerate(pd.unique(df["rho"])):
     scores = []
     for size in pd.unique(df["size"]):
-        current_score = df[(df["size"] == size) & (df["rho"] == rho) & (df["sigma"] == 0.1)]["score"].max()
+        current_score = df[(df["size"] == size)
+                           & (df["rho"] == rho)
+                           & (df["sigma"] == 0.1)]["score"].max()
         scores.append(current_score)
     ax2.plot(pd.unique(df["size"]), scores, label=rho,
              color=cmap.to_rgba(i + constant_color))

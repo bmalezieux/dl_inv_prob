@@ -280,13 +280,16 @@ def discrepancy_measure(y):
 
     u = np.log(np.abs(np.fft.fft2(y)))
     u /= np.linalg.norm(u)
-    v = np.zeros(u.shape[0] + u.shape[1])
+    v = np.zeros(int(
+        np.sqrt((u.shape[0] // 2) ** 2
+                + (u.shape[1] // 2) ** 2)
+        ))
     s = 0
     for i, j in itertools.product(
-        np.arange(u.shape[0]),
-        np.arange(u.shape[1]),
+        np.arange(u.shape[0]) // 2,
+        np.arange(u.shape[1]) // 2,
     ):
-        v[i + j] += u[i, j]
+        v[int(np.sqrt(i**2 + j**2))] += u[i, j]
     for i, j in itertools.product(
         np.arange(v.shape[0]),
         np.arange(v.shape[0]),

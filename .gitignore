@@ -12,7 +12,8 @@ pretrained
 
 # Data
 imagewoof
-imagewoof_test
+imagewoof_resized
+imagewoof_resized_test
 !experiments/data/flowers.png
 
 # VS code

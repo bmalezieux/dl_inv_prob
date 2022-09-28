@@ -23,6 +23,7 @@ setuptools.setup(
         'pathlib',
         'tqdm',
         'joblib',
+        'pillow'
     ],
     python_requires='>=3.8',
 )

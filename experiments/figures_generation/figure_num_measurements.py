@@ -24,9 +24,9 @@ for i, m in enumerate(pd.unique(data["dim_measurement"])):
             & (data["n_matrices"] == n_matrice)
         ]
         index_score = current_data["score_avg"].argmax()
-        scores.append(current_data.iloc[index_score]["score_avg"])
-        scores_q1.append(current_data.iloc[index_score]["score_q1"])
-        scores_q3.append(current_data.iloc[index_score]["score_q3"])
+        scores.append(1 - current_data.iloc[index_score]["score_avg"])
+        scores_q1.append(1 - current_data.iloc[index_score]["score_q1"])
+        scores_q3.append(1 - current_data.iloc[index_score]["score_q3"])
     plt.plot(
         pd.unique(data["n_matrices"]),
         scores,
@@ -42,11 +42,13 @@ for i, m in enumerate(pd.unique(data["dim_measurement"])):
     )
 
 plt.legend(title="Dim. m")
-plt.ylim([0.6, 1])
-plt.yticks([0.6, 0.7, 0.8, 0.9, 1.0])
+# plt.ylim([0.4, 1])
+# plt.yticks([0.6, 0.7, 0.8, 0.9, 1.0])
+plt.yscale("log")
 plt.xlabel("Number of matrices")
-plt.ylabel("Rec. score")
+plt.ylabel("1 - Rec. score")
 plt.grid()
-plt.savefig("../figures/number_measurements_compressed_sensing.pdf")
+# plt.show()
+plt.savefig("../figures/number_measurements_compressed_sensing_full.pdf")
 
 # %%

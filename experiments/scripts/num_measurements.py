@@ -66,8 +66,8 @@ if __name__ == "__main__":
 
     hyperparams = {
         "sparsity": [0.1],
-        "dim_measurement": [40, 60, 80, 100],
-        "n_matrices": np.arange(1, 6, 1),
+        "dim_measurement": [10, 20, 30, 40, 60, 80, 100],
+        "n_matrices": np.arange(1, 10, 1),
         "lambd": [0.01, 0.05, 0.1],
         "seed": [SEED],
         "n_components": [100],

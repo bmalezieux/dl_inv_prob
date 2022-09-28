@@ -15,7 +15,7 @@ data_supervised = pd.read_csv("../results/deblurring_single_image_supervised.csv
 data_supervised_256 = data_supervised[data_supervised["size"] == 256]
 
 # %%
-fig, axs = plt.subplots(3, 4, figsize=(5.5, 4.5))
+fig, axs = plt.subplots(3, 4, figsize=(6, 4.5))
 
 # PSNR
 for i, sigma in enumerate(pd.unique(data_256["sigma"])):
@@ -96,9 +96,9 @@ for i, sigma in enumerate(pd.unique(data_256["sigma"])):
 legend = axs[0, 0].legend()
 handles, labels = axs[0, 0].get_legend_handles_labels()
 legend.remove()
-fig.legend(labels=labels, handles=handles, loc="center right", bbox_to_anchor=(1.23, 0.56))
+fig.legend(labels=labels, handles=handles, loc="center right", bbox_to_anchor=(1.23, 0.52))
 plt.tight_layout()
-plt.savefig("../figures/deblurring_single_image_full_2.png")
+plt.savefig("../figures/deblurring_single_image_full_2.pdf")
 plt.clf()
 # %%
 
@@ -148,9 +148,9 @@ axs[1].grid()
 axs[2].grid()
 
 axs[0].set_ylabel("SNR (dB)")
-axs[0].set_xlabel("Sigma blurr")
-axs[1].set_xlabel("Sigma blurr")
-axs[2].set_xlabel("Sigma blurr")
+# axs[0].set_xlabel("Sigma blurr")
+# axs[1].set_xlabel("Sigma blurr")
+# axs[2].set_xlabel("Sigma blurr")
 
 axs[0].set_ylim([5, 40])
 axs[0].set_yticks([10, 15, 20, 25, 30, 35])

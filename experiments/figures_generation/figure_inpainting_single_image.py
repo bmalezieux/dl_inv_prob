@@ -23,7 +23,7 @@ for i, sigma in enumerate(pd.unique(data_256["sigma"])):
         psnr = []
         psnr_ker = []
         psnr_ran = []
-        for rho in list(pd.unique(data_supervised_256["rho"]))[:-1]:
+        for rho in list(pd.unique(data_supervised_256["rho"])):
             current_data = data_supervised_256[
                 (data_supervised_256["rho"] == rho)
                 & (data_supervised_256["sigma"] == sigma)
@@ -33,14 +33,14 @@ for i, sigma in enumerate(pd.unique(data_256["sigma"])):
             psnr.append(current_data.iloc[id]["psnr_rec"])
             psnr_ker.append(current_data.iloc[id]["psnr_rec_ker"])
             psnr_ran.append(current_data.iloc[id]["psnr_rec_range"])
-        axs[0, i].plot(1 - np.array(list(pd.unique(data_supervised_256["rho"]))[:-1]), psnr, label=name)
-        axs[1, i].plot(1 - np.array(list(pd.unique(data_supervised_256["rho"]))[:-1]), psnr_ker, label=name)
-        axs[2, i].plot(1 - np.array(list(pd.unique(data_supervised_256["rho"]))[:-1]), psnr_ran, label=name)
+        axs[0, i].plot(1 - np.array(list(pd.unique(data_supervised_256["rho"]))), psnr, label=name)
+        axs[1, i].plot(1 - np.array(list(pd.unique(data_supervised_256["rho"]))), psnr_ker, label=name)
+        axs[2, i].plot(1 - np.array(list(pd.unique(data_supervised_256["rho"]))), psnr_ran, label=name)
     for name in pd.unique(data_256["name"]):
         psnr = []
         psnr_ker = []
         psnr_ran = []
-        for rho in list(pd.unique(data_256["rho"]))[:-1]:
+        for rho in list(pd.unique(data_256["rho"])):
             current_data = data_256[
                 (data_256["rho"] == rho)
                 & (data_256["sigma"] == sigma)
@@ -50,9 +50,9 @@ for i, sigma in enumerate(pd.unique(data_256["sigma"])):
             psnr.append(current_data.iloc[id]["psnr_rec"])
             psnr_ker.append(current_data.iloc[id]["psnr_rec_ker"])
             psnr_ran.append(current_data.iloc[id]["psnr_rec_range"])
-        axs[0, i].plot(1 - np.array(list(pd.unique(data_256["rho"]))[:-1]), psnr, label=name)
-        axs[1, i].plot(1 - np.array(list(pd.unique(data_256["rho"]))[:-1]), psnr_ker, label=name)
-        axs[2, i].plot(1 - np.array(list(pd.unique(data_256["rho"]))[:-1]), psnr_ran, label=name)
+        axs[0, i].plot(1 - np.array(list(pd.unique(data_256["rho"]))), psnr, label=name)
+        axs[1, i].plot(1 - np.array(list(pd.unique(data_256["rho"]))), psnr_ker, label=name)
+        axs[2, i].plot(1 - np.array(list(pd.unique(data_256["rho"]))), psnr_ran, label=name)
 
     axs[0, i].set_title(f"SNR {round(10 * np.log(0.205 ** 2 / (sigma ** 2)) / np.log(10), 0)}")
     axs[0, i].grid()
@@ -96,9 +96,10 @@ for i, sigma in enumerate(pd.unique(data_256["sigma"])):
 legend = axs[0, 0].legend()
 handles, labels = axs[0, 0].get_legend_handles_labels()
 legend.remove()
-fig.legend(labels=labels, handles=handles, loc="center right", bbox_to_anchor=(1.23, 0.56))
+fig.legend(labels=labels, handles=handles, loc="center right", bbox_to_anchor=(1.25, 0.52))
 plt.tight_layout()
-plt.savefig("../figures/inpainting_single_image_full_2.png")
+plt.savefig("../figures/inpainting_single_image_full_2.pdf")
+plt.show()
 plt.clf()
 # %%
 
@@ -150,9 +151,9 @@ axs[1].grid()
 axs[2].grid()
 
 axs[0].set_ylabel("PSNR (dB)")
-axs[0].set_xlabel("Prop. of missing pixels")
-axs[1].set_xlabel("Prop. of missing pixels")
-axs[2].set_xlabel("Prop. of missing pixels")
+# axs[0].set_xlabel("Prop. of missing pixels")
+# axs[1].set_xlabel("Prop. of missing pixels")
+# axs[2].set_xlabel("Prop. of missing pixels")
 
 axs[0].set_ylim([10, 40])
 axs[0].set_yticks([15, 20, 25, 30, 35])

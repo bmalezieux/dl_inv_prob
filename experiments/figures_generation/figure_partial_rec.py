@@ -44,7 +44,7 @@ for i, spars in enumerate(pd.unique(data["sparsity"])):
         color=cmap.to_rgba(i+constant_color)
     )
 
-plt.plot(pd.unique(data["dim_measurement"]), np.sqrt(pd.unique(data["dim_measurement"]) / n), label="Perfect", color="black")
+plt.plot(pd.unique(data["dim_measurement"]), np.sqrt(pd.unique(data["dim_measurement"]) / n), label="Perfect", color="orange", linestyle="dashed")
 plt.legend(title="Sparsity", loc="lower right")
 plt.xlabel("Dim. m")
 plt.ylabel("Rec. score")

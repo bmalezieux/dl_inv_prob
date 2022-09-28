@@ -10,44 +10,62 @@ data = pd.read_csv("../results/deblurring_pnp_woof.csv")
 
 # %%
 
-fig, axs = plt.subplots(1, 4)
+fig, axs = plt.subplots(3, 4,  figsize=(6.5, 4.5))
 
 # PSNR
 for i, sigma in enumerate(pd.unique(data["sigma_sample"])):
     psnr_unsupervised = []
     psnr_supervised = []
+
+    psnr_ker_unsupervised = []
+    psnr_ker_supervised = []
+
+    psnr_ran_unsupervised = []
+    psnr_ran_supervised = []
     for sigma_blurr in list(pd.unique(data["sigma_blurr"])):
-        current_psnr = data[
+        current_data = data[
             (data["sigma_blurr"] == sigma_blurr)
             & (data["sigma_sample"] == sigma)
-        ]["psnr_rec_unsupervised"].max()
-        psnr_unsupervised.append(current_psnr)
+        ]
+        index = current_data["psnr_rec_unsupervised"].argmax()
 
-        current_psnr = data[
-            (data["sigma_blurr"] == sigma_blurr)
-            & (data["sigma_sample"] == sigma)
-        ]["psnr_rec_supervised"].max()
-        psnr_supervised.append(current_psnr)
+        psnr_unsupervised.append(current_data.iloc[index]["psnr_rec_unsupervised"])
+        psnr_ker_unsupervised.append(current_data.iloc[index]["psnr_ker_unsupervised"])
+        psnr_ran_unsupervised.append(current_data.iloc[index]["psnr_ran_unsupervised"])
 
+        index = current_data["psnr_rec_supervised"].argmax()
+        psnr_supervised.append(current_data.iloc[index]["psnr_rec_supervised"])
+        psnr_ker_supervised.append(current_data.iloc[index]["psnr_ker_supervised"])
+        psnr_ran_supervised.append(current_data.iloc[index]["psnr_ran_supervised"])
 
-    axs[i].plot(list(pd.unique(data["sigma_blurr"])), psnr_unsupervised, label="Unsupervised PnP")
-    axs[i].plot(list(pd.unique(data["sigma_blurr"])), psnr_supervised, label="Supervised PnP")
+    axs[0, i].plot(pd.unique(data["sigma_blurr"]), psnr_supervised, label="Sup. PnP", linestyle="dashed")
+    axs[0, i].plot(pd.unique(data["sigma_blurr"]), psnr_unsupervised, label="Unsup. PnP", linestyle="dashed")
+    axs[0, i].grid()
 
+    axs[1, i].plot(pd.unique(data["sigma_blurr"]), psnr_ker_supervised, label="Supervised PnP", linestyle="dashed")
+    axs[1, i].plot(pd.unique(data["sigma_blurr"]), psnr_ker_unsupervised, label="Unsupervised PnP", linestyle="dashed")
+    axs[1, i].grid()
 
-    axs[i].set_title(f"SNR {round(10 * np.log(0.205 ** 2 / (sigma ** 2)) / np.log(10), 0)}")
-    axs[i].grid()
+    axs[2, i].plot(pd.unique(data["sigma_blurr"]), psnr_ran_supervised, label="Supervised PnP", linestyle="dashed")
+    axs[2, i].plot(pd.unique(data["sigma_blurr"]), psnr_ran_unsupervised, label="Unsupervised PnP", linestyle="dashed")
+    axs[2, i].grid()
+
+    axs[0, i].set_title(f"SNR {round(10 * np.log(0.205 ** 2 / (sigma ** 2)) / np.log(10), 0)}")
+
     if i == 0:
-        axs[i].set_ylabel("PSNR")
-    axs[i].set_xlabel("Sigma blurr")
+        axs[0, i].set_ylabel("PSNR recovery")
+        axs[1, i].set_ylabel("PSNR kernel")
+        axs[2, i].set_ylabel("PSNR range")
 
+    axs[2, i].set_xlabel("Sigma blurr")
 
-legend = axs[0].legend()
-handles, labels = axs[0].get_legend_handles_labels()
+legend = axs[0, 0].legend()
+handles, labels = axs[0, 0].get_legend_handles_labels()
 legend.remove()
-fig.legend(labels=labels, handles=handles, loc="center right", bbox_to_anchor=(1.25, 0.56))
+fig.legend(labels=labels, handles=handles, loc="center right", bbox_to_anchor=(1.20, 0.52))
 plt.tight_layout()
-plt.show()
-plt.savefig("../figures/deblurring_pnp_full.pdf")
+plt.savefig("../figures/deblurring_pnp_full_2.pdf")
+plt.clf()
 # %%
 
 fig, axs = plt.subplots(1, 3)
@@ -82,25 +100,27 @@ for sigma_blurr in list(pd.unique(data["sigma_blurr"])):
     psnr_ker_supervised.append(current_data.iloc[index]["psnr_ker_supervised"])
     psnr_ran_supervised.append(current_data.iloc[index]["psnr_ran_supervised"])
 
+axs[0].plot(list(pd.unique(data["sigma_blurr"])), psnr_supervised, label="Supervised PnP", linestyle="dashed")
+axs[0].plot(list(pd.unique(data["sigma_blurr"])), psnr_unsupervised, label="Unsupervised PnP", linestyle="dashed")
 
-axs[0].plot(list(pd.unique(data["sigma_blurr"])), psnr_unsupervised, label="Unsupervised PnP")
-axs[0].plot(list(pd.unique(data["sigma_blurr"])), psnr_supervised, label="Supervised PnP")
 axs[0].grid()
 axs[0].set_ylabel("SNR (dB)")
 axs[0].set_xlabel("Sigma blurr")
-axs[0].set_title("SNR full space")
+# axs[0].set_title("SNR full space")
 
-axs[1].plot(list(pd.unique(data["sigma_blurr"])), 10 + np.array(psnr_ker_unsupervised), label="Unsupervised PnP")
-axs[1].plot(list(pd.unique(data["sigma_blurr"])), 10 + np.array(psnr_ker_supervised), label="Supervised PnP")
+axs[1].plot(list(pd.unique(data["sigma_blurr"])), 10 + np.array(psnr_ker_supervised), label="Supervised PnP", linestyle="dashed")
+axs[1].plot(list(pd.unique(data["sigma_blurr"])), 10 + np.array(psnr_ker_unsupervised), label="Unsupervised PnP", linestyle="dashed")
+
 axs[1].grid()
 axs[1].set_xlabel("Sigma blurr")
-axs[1].set_title("SNR kernel space")
+# axs[1].set_title("SNR kernel space")
 
-axs[2].plot(list(pd.unique(data["sigma_blurr"])), psnr_ran_unsupervised, label="Unsupervised PnP")
-axs[2].plot(list(pd.unique(data["sigma_blurr"])), psnr_ran_supervised, label="Supervised PnP")
+axs[2].plot(list(pd.unique(data["sigma_blurr"])), psnr_ran_supervised, label="Supervised PnP", linestyle="dashed")
+axs[2].plot(list(pd.unique(data["sigma_blurr"])), psnr_ran_unsupervised, label="Unsupervised PnP", linestyle="dashed")
+
 axs[2].grid()
 axs[2].set_xlabel("Sigma blurr")
-axs[2].set_title("SNR range space")
+# axs[2].set_title("SNR range space")
 
 axs[0].set_ylim([5, 40])
 axs[0].set_yticks([10, 15, 20, 25, 30, 35])

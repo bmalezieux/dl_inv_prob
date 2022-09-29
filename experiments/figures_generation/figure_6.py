@@ -34,7 +34,7 @@ for i, sigma in enumerate(pd.unique(data_256["sigma"])):
             psnr_ker.append(current_data.iloc[id]["psnr_ker"])
             psnr_ran.append(current_data.iloc[id]["psnr_ran"])
         axs[0, i].plot(list(pd.unique(data_supervised_256["sigma_blurr"]))[:-1], psnr, label=name)
-        axs[1, i].plot(list(pd.unique(data_supervised_256["sigma_blurr"]))[:-1], psnr_ker, label=name)
+        axs[1, i].plot(list(pd.unique(data_supervised_256["sigma_blurr"]))[:-1], 10 + np.array(psnr_ker), label=name)
         axs[2, i].plot(list(pd.unique(data_supervised_256["sigma_blurr"]))[:-1], psnr_ran, label=name)
     for name in pd.unique(data_256["name"]):
         psnr = []
@@ -51,7 +51,7 @@ for i, sigma in enumerate(pd.unique(data_256["sigma"])):
             psnr_ker.append(current_data.iloc[id]["psnr_ker"])
             psnr_ran.append(current_data.iloc[id]["psnr_ran"])
         axs[0, i].plot(list(pd.unique(data_256["sigma_blurr"]))[:-1], psnr, label=name)
-        axs[1, i].plot(list(pd.unique(data_256["sigma_blurr"]))[:-1], psnr_ker, label=name)
+        axs[1, i].plot(list(pd.unique(data_256["sigma_blurr"]))[:-1], 10 + np.array(psnr_ker), label=name)
         axs[2, i].plot(list(pd.unique(data_256["sigma_blurr"]))[:-1], psnr_ran, label=name)
 
     axs[0, i].set_title(f"SNR {round(10 * np.log(0.205 ** 2 / (sigma ** 2)) / np.log(10), 0)}")

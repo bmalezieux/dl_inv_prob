@@ -42,8 +42,8 @@ for i, sigma in enumerate(pd.unique(data["sigma_sample"])):
     axs[0, i].plot(pd.unique(data["sigma_blurr"]), psnr_unsupervised, label="Unsup. PnP", linestyle="dashed")
     axs[0, i].grid()
 
-    axs[1, i].plot(pd.unique(data["sigma_blurr"]), psnr_ker_supervised, label="Supervised PnP", linestyle="dashed")
-    axs[1, i].plot(pd.unique(data["sigma_blurr"]), psnr_ker_unsupervised, label="Unsupervised PnP", linestyle="dashed")
+    axs[1, i].plot(pd.unique(data["sigma_blurr"]), 10 + np.array(psnr_ker_supervised), label="Supervised PnP", linestyle="dashed")
+    axs[1, i].plot(pd.unique(data["sigma_blurr"]), 10 + np.array(psnr_ker_unsupervised), label="Unsupervised PnP", linestyle="dashed")
     axs[1, i].grid()
 
     axs[2, i].plot(pd.unique(data["sigma_blurr"]), psnr_ran_supervised, label="Supervised PnP", linestyle="dashed")

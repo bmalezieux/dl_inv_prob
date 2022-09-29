@@ -47,7 +47,7 @@ for i, spars in enumerate(pd.unique(data["sparsity"])):
 plt.plot(pd.unique(data["dim_measurement"]), np.sqrt(pd.unique(data["dim_measurement"]) / n), label="Perfect", color="orange", linestyle="dashed")
 plt.legend(title="Sparsity", loc="lower right")
 plt.xlabel("Dim. m")
-plt.ylabel("Rec. score")
+plt.ylabel("Rec. score S(C)")
 plt.grid()
 plt.savefig("../figures/score_partial_rec.pdf")
 

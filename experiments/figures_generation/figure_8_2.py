@@ -25,6 +25,5 @@ plt.xlabel("Number atoms")
 plt.ylabel("Discrepancy")
 plt.grid()
 plt.legend()
-
 plt.savefig("../figures/deblurring_cdl_supervised_atoms.pdf")
 # %%

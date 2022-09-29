@@ -23,7 +23,9 @@ setuptools.setup(
         'pathlib',
         'tqdm',
         'joblib',
-        'pillow'
+        'pillow',
+        'pywavelets',
+        'torchvision'
     ],
     python_requires='>=3.8',
 )

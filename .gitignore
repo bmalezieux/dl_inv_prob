@@ -1,8 +1,5 @@
 # Tmp
-tmp_cdl_digits
-tmp_inpainting
-tmp_inpainting_supervised
-tmp_inpainting_color
+\tmp*
 pretrained
 
 # Results
@@ -14,6 +11,9 @@ pretrained
 *.pt
 
 # Data
+imagewoof
+imagewoof_resized
+imagewoof_resized_test
 !experiments/data/flowers.png
 
 # VS code

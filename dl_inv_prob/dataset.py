@@ -1,4 +1,4 @@
-from .utils import determinist_inpainting
+from .utils import determinist_inpainting, determinist_blurr
 import numpy as np
 import os
 from PIL import Image
@@ -7,6 +7,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import SubsetRandomSampler
 import torchvision.transforms as T
+import torch.nn.functional as F
 
 
 def make_dataset(path, n_samples=None):
@@ -15,7 +16,7 @@ def make_dataset(path, n_samples=None):
     for img in os.listdir(path):
         if n_samples is not None and len(images) >= n_samples:
             break
-        if img.endswith(".png"):
+        if img.endswith(".png") or img.endswith(".JPEG") or img.endswith(".jpeg"):
             img_path = os.path.join(path, img)
             images.append(img_path)
 
@@ -113,7 +114,59 @@ class DenoisingInpaintingDataset(Dataset):
         )
         noisy = mask * (corrupted + random_sigma * noise)
 
-        return noisy, original, mask
+        return noisy, corrupted, mask
+
+
+class DenoisingDeblurringDataset(Dataset):
+    def __init__(
+        self,
+        path,
+        n_samples=None,
+        noise_std=0.3,
+        rng=None,
+        dtype=torch.float32,
+        device="cpu",
+        sigma=0.0,
+        sigma_blurr=0.1,
+        size_blurr=10
+    ):
+        self.images = make_dataset(path, n_samples)
+        self.noise_std = noise_std
+        self.rng = rng if rng is not None else torch.Generator(device=device)
+        self.dtype = dtype
+        self.device = device
+        self.sigma = sigma
+        self.sigma_blurr = sigma_blurr
+        self.size_blurr = size_blurr
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        img_path = self.images[idx]
+        original, corrupted, blurr = determinist_blurr(
+            img_path,
+            self.sigma_blurr,
+            self.size_blurr,
+            self.sigma,
+            dtype=self.dtype,
+            device=self.device,
+        )
+        noise = torch.randn(
+            corrupted.shape,
+            generator=self.rng,
+            dtype=self.dtype,
+            device=self.device,
+        )
+        random_sigma = (
+            torch.rand(
+                1, generator=self.rng, dtype=self.dtype, device=self.device
+            )
+            * self.noise_std
+        )
+        noisy = corrupted + random_sigma * noise
+
+        return noisy, corrupted, blurr
 
 
 class SimpleDataset(Dataset):

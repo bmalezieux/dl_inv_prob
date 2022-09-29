@@ -1,21 +1,19 @@
 """
 Benchmark for inpainting with convolutional dictionary learning.
 """
-import datetime
 import itertools
-from dl_inv_prob.utils import determinist_inpainting
+from dl_inv_prob.utils import determinist_blurr
 import numpy as np
 import os
 import pandas as pd
 import random
-import time
 import torch
 
 from dl_inv_prob.common_utils import (
     torch_to_np,
 )
-from dl_inv_prob.dl import ConvolutionalInpainting
-from dl_inv_prob.utils import psnr, is_divergence
+from dl_inv_prob.dl import Deconvolution
+from dl_inv_prob.utils import psnr, is_divergence, split_psnr
 from joblib import Memory
 from pathlib import Path
 from tqdm import tqdm
@@ -24,8 +22,9 @@ EXPERIMENTS = Path(__file__).resolve().parents[1]
 DATA = os.path.join(EXPERIMENTS, "data")
 IMG = os.path.join(DATA, "flowers.png")
 RESULTS = os.path.join(EXPERIMENTS, "results")
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
-RESULT_FILE = "inpainting_single_image_supervised.csv"
+DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
+RESULT_FILE = "deblurring_single_image_supervised.csv"
+
 
 # Reproducibility
 SEED = 2022
@@ -43,7 +42,9 @@ torch.use_deterministic_algorithms(True)
 np.random.seed(SEED)
 random.seed(SEED)
 
-mem = Memory(location="./tmp_inpainting_supervised/", verbose=0)
+
+mem = Memory(location="./tmp_deblurring_supervised/", verbose=0)
+
 
 ###########
 # Solvers #
@@ -51,8 +52,9 @@ mem = Memory(location="./tmp_inpainting_supervised/", verbose=0)
 
 
 SOLVERS = {
-    "CDL_supervised": ConvolutionalInpainting,
+    "CDL_supervised": Deconvolution,
 }
+
 
 #########################
 # Parameters extraction #
@@ -67,8 +69,9 @@ def extract_params(params):
     params_solver = {
         "name": params["name"],
         "size": params["size"],
-        "rho": params["rho"],
         "sigma": params["sigma"],
+        "size_blurr": params["size_blurr"],
+        "sigma_blurr": params["sigma_blurr"],
     }
 
     solver_name = params["name"]
@@ -87,7 +90,8 @@ def extract_params_learning(params):
     """
     params_solver = {
         "name": params["name"],
-        "size": params["size"]
+        "size": params["size"],
+        "size_blurr": params["size_blurr"]
     }
 
     if params["name"] == "CDL_supervised":
@@ -129,6 +133,22 @@ def generate_algo(params):
 #############
 
 
+def data_generation(params):
+
+    size = params["size"]
+    sigma_blurr = params["sigma_blurr"]
+    size_blurr = params["size_blurr"]
+    sigma = params["sigma"]
+    img, img_blurred, blurr = determinist_blurr(
+        IMG, sigma_blurr, size_blurr, sigma=sigma, size=size
+    )
+    img = torch_to_np(img).squeeze()
+    img_corrupted = torch_to_np(img_blurred).squeeze()
+    A = blurr.numpy()
+
+    return img, img_corrupted, A
+
+
 @mem.cache
 def learn_dictionary(params_dictionary):
     """
@@ -136,13 +156,16 @@ def learn_dictionary(params_dictionary):
     """
 
     size = params_dictionary["size"]
-    img, img_inpainting, mask = determinist_inpainting(
-        IMG, prop=1, sigma=0, size=size
+    size_blurr = params_dictionary["size_blurr"]
+    img, img_corrupted, blurr = determinist_blurr(
+        IMG, 0, size_blurr, sigma=0, size=size
     )
     img = torch_to_np(img).squeeze()
-    mask = torch_to_np(mask).squeeze()
     algo = generate_algo(params_dictionary)
-    algo.fit(img[None, :, :], np.ones_like(img[None, :, :]))
+    algo.fit(
+        img[None, :, :],
+        np.array([1])[None, None, None, :]
+    )
 
     return algo
 
@@ -154,39 +177,25 @@ def run_test(params):
     """
 
     # Data generation
-    size = params["size"]
-    rho = params["rho"]
-    sigma = params["sigma"]
-    img, img_inpainting, mask = determinist_inpainting(
-        IMG, prop=1 - rho, sigma=sigma, size=size
-    )
-    img = torch_to_np(img).squeeze()
-    img_inpainting = torch_to_np(img_inpainting).squeeze()
-    mask = torch_to_np(mask).squeeze()
+    img, img_corrupted, A = data_generation(params)
 
     params_learning = extract_params_learning(params)
     algo = learn_dictionary(params_learning)
 
     # Reconstruction
-    start = time.time()
-    rec = algo.rec(img_inpainting[None, :, :], mask[None, :, :]).squeeze()
+    rec = algo.rec(img_corrupted[None, :, :], A[None, :, :]).squeeze()
     rec = np.clip(rec, 0, 1)
-    stop = time.time()
 
     # Result
     psnr_rec = psnr(rec, img)
-    psnr_corr = psnr(img_inpainting, img)
     is_rec = is_divergence(rec, img)
-    is_corr = is_divergence(img_inpainting, img)
-    delta = stop - start
-    delta = str(datetime.timedelta(seconds=delta))
+    psnr_ran, psnr_ker = split_psnr(rec, img, A[0], params["sigma_blurr"])
 
     results = {
-        "psnr_corr": psnr_corr,
         "psnr_rec": psnr_rec,
+        "psnr_ran": psnr_ran,
+        "psnr_ker": psnr_ker,
         "is_rec": is_rec,
-        "is_corr": is_corr,
-        "time": delta,
     }
 
     return results
@@ -202,7 +211,8 @@ if __name__ == "__main__":
     hyperparams = {
         "size": [256],
         "sigma": [0.0, 0.02, 0.05, 0.1],
-        "rho": np.arange(0.1, 1.0, 0.1),
+        "sigma_blurr": np.arange(0.1, 1.0, 0.1),
+        "size_blurr": [10],
         "name": SOLVERS.keys(),
         "n_atoms": [50, 100],
         "lambd": [0.01, 0.05, 0.1],

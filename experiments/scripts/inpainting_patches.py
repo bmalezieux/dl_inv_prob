@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 
 DATA_PATH = '../data/flowers.png'
-DEVICE = "cuda:3"
+DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 N_EXP = 10
 RNG = np.random.default_rng(2022)
 

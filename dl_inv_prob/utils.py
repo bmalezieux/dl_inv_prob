@@ -1,10 +1,13 @@
 import numpy as np
 from PIL import Image
 from scipy.optimize import linear_sum_assignment
-from scipy.signal import correlate2d
+from scipy.signal import correlate2d, convolve
 from sklearn.datasets import load_digits
 import torch
+import torch.nn.functional as F
 import torchvision.transforms as T
+import hashlib
+import itertools
 
 
 def generate_dico(n_components, dim_signal, rng=None):
@@ -181,7 +184,7 @@ def combine_patches(patches):
     return img
 
 
-def psnr(rec, ref):
+def psnr(rec, ref, d=1.):
     """
     Compute the peak signal-to-noise ratio for grey images in [0, 1].
 
@@ -198,9 +201,37 @@ def psnr(rec, ref):
         psnr of the reconstructed image
     """
     mse = np.square(rec - ref).mean()
-    psnr = 10 * np.log10(1 / mse)
+    psnr = 10 * np.log10(d ** 2 / mse)
 
     return psnr
+
+
+def split_psnr(rec, img, kernel, sigma):
+    size_x, size_y = img.shape
+
+    dirac_image = np.zeros((size_x, size_y))
+    dirac_image[size_x // 2, size_y // 2] = 1
+
+    result = convolve(dirac_image, kernel, mode="same")
+
+    f_dirac = np.fft.fft2(result)
+    mag_dirac = np.abs(f_dirac)
+
+    value = np.exp(-0.5 * 4) / np.sqrt(2 * np.pi * sigma ** 2)
+
+    ran_kernel = (mag_dirac > value)
+    ker_kernel = (mag_dirac < value)
+
+    f_rec = np.fft.fft2(rec)
+    f_img = np.fft.fft2(img)
+
+    rec_ran = np.clip(np.abs(np.fft.ifft2(f_rec * ran_kernel)), 0, 1)
+    rec_ker = np.clip(np.abs(np.fft.ifft2(f_rec * ker_kernel)), 0, 1)
+
+    img_ran = np.clip(np.abs(np.fft.ifft2(f_img * ran_kernel)), 0, 1)
+    img_ker = np.clip(np.abs(np.fft.ifft2(f_img * ker_kernel)), 0, 1)
+
+    return psnr(rec_ran, img_ran, d=0.95), psnr(rec_ker, img_ker, d=0.05)
 
 
 def is_divergence(rec, ref):
@@ -221,17 +252,52 @@ def is_divergence(rec, ref):
     """
 
     f_rec = np.fft.fft2(rec)
-    fshift_rec = np.fft.fftshift(f_rec)
-    mag_rec = 20 * np.log(np.abs(fshift_rec))
+    mag_rec = np.abs(f_rec)
 
     f_ref = np.fft.fft2(ref)
-    fshift_ref = np.fft.fftshift(f_ref)
-    mag_ref = 20 * np.log(np.abs(fshift_ref))
+    mag_ref = np.abs(f_ref)
 
     ratio = (mag_rec / mag_ref - np.log(mag_rec / mag_ref) - 1)
-    is_div = ratio[~np.isnan(ratio)].sum()
+    is_div = ratio[~np.isnan(ratio)].mean()
 
     return is_div
+
+
+def discrepancy_measure(y):
+    """
+    Discrepancy measure in a spectrum
+
+    Parameters
+    ----------
+    y : ndarray, shape (height, width)
+        image
+
+    Returns
+    -------
+    float
+        score
+    """
+
+    u = np.log(np.abs(np.fft.fft2(y)))
+    u /= np.linalg.norm(u)
+    v = np.zeros(int(
+        np.sqrt((u.shape[0] // 2) ** 2
+                + (u.shape[1] // 2) ** 2)
+        ))
+    s = 0
+    for i, j in itertools.product(
+        np.arange(u.shape[0]) // 2,
+        np.arange(u.shape[1]) // 2,
+    ):
+        v[int(np.sqrt(i**2 + j**2))] += u[i, j]
+    for i, j in itertools.product(
+        np.arange(v.shape[0]),
+        np.arange(v.shape[0]),
+    ):
+        s += v[i] * v[j] * (
+            np.abs(np.log(1 + i) - np.log(1 + j))
+        )
+    return s
 
 
 def create_patches_overlap(im, m, A=None):
@@ -401,12 +467,72 @@ def determinist_inpainting(
     if size is not None:
         img = img.resize((size, size), Image.ANTIALIAS)
     img = T.ToTensor()(img).to(device)
+
+    # Generate same mask for each image from seed
     rng = torch.Generator(device=device)
     rng.manual_seed(seed)
     mask = (
         torch.rand(img.shape, generator=rng, dtype=dtype, device=device) > prop
     )
-    noise = torch.randn(img.shape, generator=rng, dtype=dtype, device=device)
+
+    # Generate noise for a specific image
+    hash = hashlib.md5(bytes(img_path, "utf-8")).hexdigest()
+    seed_noise = int(hash[:8], 16)
+    rng_noise = torch.Generator(device=device)
+    rng_noise.manual_seed(seed_noise)
+    noise = torch.randn(img.shape, generator=rng_noise,
+                        dtype=dtype, device=device)
+
+    # Degraded image
     img_corr = torch.clip(mask * (img + sigma * noise), 0, 1)
 
     return img, img_corr, mask
+
+
+def determinist_blurr(
+    img_path, sigma_blurr, size_kernel, sigma, size=None,
+    dtype=torch.float32, device="cpu", padding=None
+):
+    """Apply deterministic blurr to an image."""
+    img = Image.open(img_path).convert("L")
+    if size is not None:
+        img = img.resize((size, size), Image.ANTIALIAS)
+    img = T.ToTensor()(img).to(device)
+
+    # Generate same blurr for each image from seed
+    t = np.linspace(-1, 1, size_kernel)
+    if sigma_blurr == 0:
+        sigma_blurr = 1e-2
+    gaussian = np.exp(-0.5 * (t / sigma_blurr) ** 2)
+    kernel = gaussian[None, :] * gaussian[:, None]
+    kernel /= kernel.sum()
+    kernel = torch.tensor(
+        kernel,
+        device=device,
+        dtype=torch.float,
+        requires_grad=False
+    )
+
+    # Generate noise for a specific image
+    hash = hashlib.md5(bytes(img_path, "utf-8")).hexdigest()
+    seed_noise = int(hash[:8], 16)
+    rng_noise = torch.Generator(device=device)
+    rng_noise.manual_seed(seed_noise)
+
+    # Degraded image
+    if padding is None:
+        img_blurred = F.conv_transpose2d(
+            img[None, :, :],
+            kernel[None, None, :, :],
+        )
+    elif padding == "same":
+        img_blurred = F.conv2d(
+            img[None, :, :],
+            torch.flip(kernel[None, None, :, :], dims=[2, 3]),
+            padding="same"
+        )
+    noise = torch.randn(img_blurred.shape, generator=rng_noise,
+                        dtype=dtype, device=device)
+    img_corr = torch.clip(img_blurred + sigma * noise, 0, 1)
+
+    return img, img_corr[0], kernel[None, :, :]

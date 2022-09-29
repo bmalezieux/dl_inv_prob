@@ -1042,7 +1042,10 @@ class Deconvolution(ConvolutionalInpainting):
         else:
             dico = self.D * self.window
         rec = self.convt(x, dico)
-        diff = self.convt(rec, self.kernel) - y
+        diff = self.convt(
+            rec,
+            self.kernel,
+        ) - y
         l2 = diff.ravel() @ diff.ravel()
         l1 = torch.sum(torch.abs(x))
         cost = 0.5 * l2 + self.lambd * l1
@@ -1094,7 +1097,11 @@ class Deconvolution(ConvolutionalInpainting):
             iterate_old = iterate.clone()
 
             # Gradient descent
-            rec = self.convt(self.convt(out, dico), self.kernel)
+            # Conv transpose with padding="same"
+            rec = self.convt(
+                self.convt(out, dico),
+                self.kernel,
+            )
             diff = self.conv(rec - y, self.kernel)
             gradient = self.conv(diff, dico)
             out = out - step * gradient
@@ -1120,7 +1127,7 @@ class Deconvolution(ConvolutionalInpainting):
         ----------
         Y : ndarray, shape (batch_size, im_height, im_weight)
             Observations to be processed
-        kernel : ndarray, shape (kernel_height, kernel_width)
+        kernel : ndarray, shape (1, 1, kernel_height, kernel_width)
             Convolutional kernel
 
         Returns
@@ -1130,7 +1137,6 @@ class Deconvolution(ConvolutionalInpainting):
         """
         # Kernel
         self.kernel = torch.from_numpy(kernel).float().to(self.device)
-        self.kernel = self.kernel[None, None, :, :]
 
         # Dictionary
         if self.init_D is None:
@@ -1156,3 +1162,30 @@ class Deconvolution(ConvolutionalInpainting):
         # Training
         loss = self.training_process()
         return loss
+
+    def rec(self, Y=None, kernel=None):
+        """
+        Reconstruct the image with the learned atoms and sparse codes.
+
+        Parameters
+        ----------
+        Y : torch.Tensor, shape (batch_size, im_height, im_weight)
+            Data to be reconstructed
+
+        Returns
+        -------
+        rec : torch.Tensor, shape (batch_size, im_height, im_width)
+            Reconstructed image
+        """
+        with torch.no_grad():
+            if Y is None:
+                Y_tensor = self.Y_tensor
+            else:
+                Y_tensor = torch.from_numpy(Y).float().to(self.device)
+
+            if kernel is not None:
+                self.kernel = torch.from_numpy(kernel).float().to(self.device)
+            x = self.forward(Y_tensor)
+            rec = self.convt(x, self.D)
+
+        return rec.detach().to("cpu").numpy()

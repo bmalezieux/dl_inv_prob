@@ -20,7 +20,7 @@ from utils.wavelets import SparseWavelets
 
 EXPERIMENTS = Path(__file__).resolve().parents[1]
 DATA = os.path.join(EXPERIMENTS, "data")
-IMG = os.path.join(DATA, "flowers.png")
+# IMG = os.path.join(DATA, "flowers.png")
 RESULTS = os.path.join(EXPERIMENTS, "results", "inpainting_color")
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -44,11 +44,24 @@ mem = Memory(location="./tmp_inpainting_color/", verbose=0)
 
 SIZE = 256
 
-img = Image.open(IMG).convert("RGB").resize((SIZE, SIZE), Image.ANTIALIAS)
-img = pil_to_np(img)
-
 os.makedirs(RESULTS, exist_ok=True)
-plt.imsave(os.path.join(RESULTS, "clean.png"), np.transpose(img, (1, 2, 0)))
+
+imgs = []
+for file in os.listdir(DATA):
+    if file.endswith("png") or file.endswith("jpg"):
+        name = file.split(".")[0]
+        img_path = os.path.join(DATA, file)
+        img = (
+            Image.open(img_path)
+            .convert("RGB")
+            .resize((SIZE, SIZE), Image.ANTIALIAS)
+        )
+        img = pil_to_np(img)
+        imgs.append((img, name))
+        plt.imsave(
+            os.path.join(RESULTS, f"{name}_clean.png"),
+            np.transpose(img, (1, 2, 0)),
+        )
 
 # CDL
 n_atoms = 50
@@ -145,33 +158,33 @@ solvers = [cdl, dip, tv, wavelets]
 solver_names = ["cdl", "dip", "tv", "wavelets"]
 
 dict_results = {}
+for img, name in imgs:
+    for rho in rhos:
+        for sigma in sigmas:
 
-for rho in rhos:
-    for sigma in sigmas:
+            # Data generation
+            mask = NP_RNG.binomial(1, rho, size=img.shape[1:])
+            noise = NP_RNG.normal(0, sigma, size=img.shape)
+            img_inpainting = (img + noise) * mask
+            img_inpainting = np.clip(img_inpainting, 0, 1)
 
-        # Data generation
-        mask = NP_RNG.binomial(1, rho, size=img.shape[1:])
-        noise = NP_RNG.normal(0, sigma, size=img.shape)
-        img_inpainting = (img + noise) * mask
-        img_inpainting = np.clip(img_inpainting, 0, 1)
-
-        file_name = f"corrupted_{rho:.2f}_{sigma:.2f}.png"
-        plt.imsave(
-            os.path.join(RESULTS, file_name),
-            np.transpose(img_inpainting, (1, 2, 0)),
-        )
-
-        for solver, solver_name in zip(solvers, solver_names):
-            params = {
-                "rho": rho,
-                "sigma": sigma,
-                "solver_name": solver_name,
-                "solver": solver,
-            }
-            rec = run_test(params)
-
-            file_name = f"{solver_name}_{rho:.2f}_{sigma:.2f}.png"
+            file_name = f"{name}_corrupted_{rho:.2f}_{sigma:.2f}.png"
             plt.imsave(
                 os.path.join(RESULTS, file_name),
-                np.transpose(rec, (1, 2, 0)),
+                np.transpose(img_inpainting, (1, 2, 0)),
             )
+
+            for solver, solver_name in zip(solvers, solver_names):
+                params = {
+                    "rho": rho,
+                    "sigma": sigma,
+                    "solver_name": solver_name,
+                    "solver": solver,
+                }
+                rec = run_test(params)
+
+                file_name = f"{name}_{solver_name}_{rho:.2f}_{sigma:.2f}.png"
+                plt.imsave(
+                    os.path.join(RESULTS, file_name),
+                    np.transpose(rec, (1, 2, 0)),
+                )

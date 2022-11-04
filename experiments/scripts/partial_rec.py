@@ -13,9 +13,9 @@ from tqdm import tqdm
 N_EXP = 5
 SEED = 2022
 EXPERIMENTS = Path(__file__).resolve().parents[1]
-DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
 RESULTS = os.path.join(EXPERIMENTS, "results/partial_rec.csv")
-mem = Memory(location='./tmp_partial_rec/', verbose=0)
+mem = Memory(location="./tmp_partial_rec/", verbose=0)
 
 
 @mem.cache
@@ -45,7 +45,7 @@ def run_test(params):
             init_D=D_init,
             device=DEVICE,
             rng=rng,
-            lambd=params["lambd"]
+            lambd=params["lambd"],
         )
         dl.fit(Y, A)
 
@@ -55,7 +55,7 @@ def run_test(params):
     results = {
         "score_avg": np.mean(scores),
         "score_q1": np.quantile(scores, q=0.25),
-        "score_q3": np.quantile(scores, q=0.75)
+        "score_q3": np.quantile(scores, q=0.75),
     }
 
     return results
@@ -70,7 +70,7 @@ if __name__ == "__main__":
         "seed": [SEED],
         "n_components": [100],
         "dim_signal": [100],
-        "n_data": [10000]
+        "n_data": [10000],
     }
 
     keys, values = zip(*hyperparams.items())

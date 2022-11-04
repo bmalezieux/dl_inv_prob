@@ -137,7 +137,7 @@ for img, name in imgs:
         result = np.zeros(y.shape)
         for i in range(3):
             print(i)
-            models[model].fit(y_conv[i][None, :, :], kernel[None, :, :])
+            models[model].fit(y_conv[i][None, :, :], kernel[None, None, :, :])
             result[i] = np.clip(models[model].rec(), 0, 1)
         plt.imsave(
             os.path.join(RESULTS, f"{name}_{model}.png"),

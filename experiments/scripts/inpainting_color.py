@@ -22,7 +22,7 @@ EXPERIMENTS = Path(__file__).resolve().parents[1]
 DATA = os.path.join(EXPERIMENTS, "data")
 # IMG = os.path.join(DATA, "flowers.png")
 RESULTS = os.path.join(EXPERIMENTS, "results", "inpainting_color")
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
 
 # Reproducibility
 SEED = 2022
@@ -152,7 +152,7 @@ def run_test(params):
     return rec
 
 
-sigmas = [0.0, 0.1]
+sigmas = [0.0]
 rhos = [0.5]
 solvers = [cdl, dip, tv, wavelets]
 solver_names = ["cdl", "dip", "tv", "wavelets"]

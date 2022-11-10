@@ -22,7 +22,7 @@ import itertools
 from tqdm import tqdm
 
 
-DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.float32
 
 # Paths
@@ -46,7 +46,7 @@ hyperparams = {
     "batch_size": [32],
     "lr": [0.001],
     "step_pnp": [1.0],
-    "iter_pnp": [100]
+    "iter_pnp": [100],
 }
 
 keys, values = zip(*hyperparams.items())
@@ -157,14 +157,19 @@ for params in tqdm(permuts_params):
                     params["size_blurr"],
                     params["sigma_sample"],
                     dtype=DTYPE,
-                    device=DEVICE
+                    device=DEVICE,
                 )
                 y_conv_display = F.conv2d(
                     img_test[None, :, :],
                     torch.flip(blurr_test[None, :, :], dims=[2, 3]),
-                    padding="same"
+                    padding="same",
                 )
-                noise_same = torch.randn(y_conv_display.shape, generator=RNG, dtype=DTYPE, device=DEVICE)
+                noise_same = torch.randn(
+                    y_conv_display.shape,
+                    generator=RNG,
+                    dtype=DTYPE,
+                    device=DEVICE,
+                )
 
                 img_test = img_test[None, :, :]
                 blurr_test = blurr_test[None, :, :]
@@ -177,18 +182,27 @@ for params in tqdm(permuts_params):
                 with torch.no_grad():
                     for iter in range(1, params["iter_pnp"] + 1):
                         grad = F.conv2d(
-                            F.conv_transpose2d(out, blurr_test) - corrupted_img_test,
-                            blurr_test
+                            F.conv_transpose2d(out, blurr_test)
+                            - corrupted_img_test,
+                            blurr_test,
                         )
                         out -= params["step_pnp"] * grad
                         out = torch.clip(denoiser(out), 0, 1)
-                        loss = mse(F.conv_transpose2d(out, blurr_test), corrupted_img_test)
+                        loss = mse(
+                            F.conv_transpose2d(out, blurr_test),
+                            corrupted_img_test,
+                        )
 
                 out_np = torch_to_np(out)
 
                 # Store PSNR
                 psnr_rec = psnr(out_np, img_test_np)
-                psnr_ran, psnr_ker = split_psnr(out_np[0], img_test_np[0], blurr_test_np[0], params["sigma_blurr"])
+                psnr_ran, psnr_ker = split_psnr(
+                    out_np[0],
+                    img_test_np[0],
+                    blurr_test_np[0],
+                    params["sigma_blurr"],
+                )
 
                 if mode == "denoising_deblurring":
                     psnr_rec_unsupervised += psnr_rec

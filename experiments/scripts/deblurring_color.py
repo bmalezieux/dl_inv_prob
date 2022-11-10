@@ -20,7 +20,7 @@ EXPERIMENTS = Path(__file__).resolve().parents[1]
 DATA = os.path.join(EXPERIMENTS, "data")
 # IMG = os.path.join(DATA, "flowers.png")
 RESULTS = os.path.join(EXPERIMENTS, "results", "deblurring_color")
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
 
 # Reproducibility
 SEED = 2022
@@ -102,7 +102,7 @@ cdl = Deconvolution(
 models = {
     "tv": proxtv,
     "wavelets": sparse,
-    # "cdl": cdl,
+    "cdl": cdl,
     "dip": dip,
 }
 

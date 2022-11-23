@@ -21,7 +21,7 @@ import itertools
 from tqdm import tqdm
 
 
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
 DTYPE = torch.float32
 
 # Paths
@@ -44,7 +44,7 @@ hyperparams = {
     "batch_size": [32],
     "lr": [0.001],
     "step_pnp": [1.0],
-    "iter_pnp": [100]
+    "iter_pnp": [100],
 }
 
 keys, values = zip(*hyperparams.items())
@@ -148,7 +148,11 @@ for params in tqdm(permuts_params):
             denoiser.eval()
 
             for filename in os.listdir(TEST_DATA)[:N_TEST]:
-                img_test, corrupted_img_test, mask_test = determinist_inpainting(
+                (
+                    img_test,
+                    corrupted_img_test,
+                    mask_test,
+                ) = determinist_inpainting(
                     img_path=os.path.join(TEST_DATA, filename),
                     prop=params["prop"],
                     sigma=params["sigma_sample"],
@@ -175,8 +179,12 @@ for params in tqdm(permuts_params):
 
                 # Store PSNR
                 psnr_rec = psnr(out_np, img_test_np)
-                psnr_ker = psnr(out_np[mask_test_np == 0], img_test_np[mask_test_np == 0])
-                psnr_ran = psnr(out_np[mask_test_np == 1], img_test_np[mask_test_np == 1])
+                psnr_ker = psnr(
+                    out_np[mask_test_np == 0], img_test_np[mask_test_np == 0]
+                )
+                psnr_ran = psnr(
+                    out_np[mask_test_np == 1], img_test_np[mask_test_np == 1]
+                )
                 if mode == "denoising_inpainting":
                     psnr_rec_unsupervised += psnr_rec
                     psnr_ker_unsupervised += psnr_ker

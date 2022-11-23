@@ -23,10 +23,17 @@ from utils.wavelets import SparseWaveletsDeblurring
 
 EXPERIMENTS = Path(__file__).resolve().parents[1]
 DATA = os.path.join(EXPERIMENTS, "data")
-IMG = os.path.join(DATA, "flowers.png")
+# IMG = os.path.join(DATA, "flowers.png")
 RESULTS = os.path.join(EXPERIMENTS, "results")
-DEVICE = "cuda:2" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:1" if torch.cuda.is_available() else "cpu"
 RESULT_FILE = "deblurring_single_image.csv"
+
+IMGS = {}
+for file in os.listdir(DATA):
+    if file.endswith("png") or file.endswith("jpg"):
+        name = file.split(".")[0]
+        img_path = os.path.join(DATA, file)
+        IMGS.update([(name, img_path)])
 
 # Reproducibility
 SEED = 2022
@@ -72,6 +79,7 @@ def extract_params(params):
     """
 
     params_solver = {
+        "image": params["image"],
         "name": params["name"],
         "size": params["size"],
         "sigma": params["sigma"],
@@ -169,6 +177,7 @@ def data_generation(params):
     sigma_blurr = params["sigma_blurr"]
     size_blurr = params["size_blurr"]
     sigma = params["sigma"]
+    IMG = IMGS[params["image"]]
     img, img_blurred, blurr = determinist_blurr(
         IMG, sigma_blurr, size_blurr, sigma=sigma, size=size
     )
@@ -217,6 +226,7 @@ def run_test(params):
 if __name__ == "__main__":
 
     hyperparams = {
+        "image": IMGS.keys(),
         "size": [256],
         "sigma": [0.0, 0.02, 0.05, 0.1],
         "sigma_blurr": np.arange(0.1, 1.0, 0.1),

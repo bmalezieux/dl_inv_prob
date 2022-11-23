@@ -20,10 +20,17 @@ from tqdm import tqdm
 
 EXPERIMENTS = Path(__file__).resolve().parents[1]
 DATA = os.path.join(EXPERIMENTS, "data")
-IMG = os.path.join(DATA, "flowers.png")
+# IMG = os.path.join(DATA, "flowers.png")
 RESULTS = os.path.join(EXPERIMENTS, "results")
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 RESULT_FILE = "inpainting_single_image_supervised.csv"
+
+IMGS = {}
+for file in os.listdir(DATA):
+    if file.endswith("png") or file.endswith("jpg"):
+        name = file.split(".")[0]
+        img_path = os.path.join(DATA, file)
+        IMGS.update([(name, img_path)])
 
 # Reproducibility
 SEED = 2022
@@ -63,6 +70,7 @@ def extract_params(params):
     """
 
     params_solver = {
+        "image": params["image"],
         "name": params["name"],
         "size": params["size"],
         "rho": params["rho"],
@@ -84,8 +92,9 @@ def extract_params_learning(params):
     Extract relevant parameters for supervised learning
     """
     params_solver = {
+        "image": params["image"],
         "name": params["name"],
-        "size": params["size"]
+        "size": params["size"],
     }
 
     if params["name"] == "CDL_supervised":
@@ -134,6 +143,7 @@ def learn_dictionary(params_dictionary):
     """
 
     size = params_dictionary["size"]
+    IMG = IMGS[params_dictionary["image"]]
     img, img_inpainting, mask = determinist_inpainting(
         IMG, prop=1, sigma=0, size=size
     )
@@ -155,6 +165,7 @@ def run_test(params):
     size = params["size"]
     rho = params["rho"]
     sigma = params["sigma"]
+    IMG = IMGS[params["image"]]
     img, img_inpainting, mask = determinist_inpainting(
         IMG, prop=1 - rho, sigma=sigma, size=size
     )
@@ -193,6 +204,7 @@ def run_test(params):
 if __name__ == "__main__":
 
     hyperparams = {
+        "image": IMGS.keys(),
         "size": [256],
         "sigma": [0.0, 0.02, 0.05, 0.1],
         "rho": np.arange(0.1, 1.0, 0.1),

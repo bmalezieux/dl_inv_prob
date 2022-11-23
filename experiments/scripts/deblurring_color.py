@@ -1,4 +1,3 @@
-
 # %%
 import numpy as np
 import os
@@ -19,9 +18,9 @@ from pathlib import Path
 
 EXPERIMENTS = Path(__file__).resolve().parents[1]
 DATA = os.path.join(EXPERIMENTS, "data")
-IMG = os.path.join(DATA, "flowers.png")
+# IMG = os.path.join(DATA, "flowers.png")
 RESULTS = os.path.join(EXPERIMENTS, "results", "deblurring_color")
-DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda:3" if torch.cuda.is_available() else "cpu"
 
 # Reproducibility
 SEED = 2022
@@ -39,34 +38,25 @@ torch.use_deterministic_algorithms(True)
 
 
 SIZE = 256
-img = Image.open(IMG).convert("RGB").resize((SIZE, SIZE), Image.ANTIALIAS)
-img = pil_to_np(img)
 
 os.makedirs(RESULTS, exist_ok=True)
-plt.imsave(os.path.join(RESULTS, "clean.png"), np.transpose(img, (1, 2, 0)))
 
-# %%
-y = np.array(img)
-y = torch.tensor(y, device=DEVICE, dtype=torch.float, requires_grad=False)
-kernel = gaussian_kernel(10, 0.3)
-kernel = torch.tensor(kernel, device=DEVICE, dtype=torch.float,
-                      requires_grad=False)
-y_conv = F.conv_transpose2d(y[:, None, :, :], kernel[None, None, :, :])
-y_conv_display = F.conv2d(
-    y[:, None, :, :],
-    torch.flip(kernel[None, None, :, :], dims=[2, 3]),
-    padding="same"
-)
-
-y_conv = y_conv.detach().cpu().numpy().squeeze()
-y_conv_display = y_conv_display.detach().cpu().numpy().squeeze()
-kernel = kernel.detach().cpu().numpy().squeeze()
-y = y.detach().cpu().numpy().squeeze()
-
-plt.imsave(
-    os.path.join(RESULTS, "blurred.png"),
-    np.transpose(y_conv_display, (1, 2, 0))
-)
+imgs = []
+for file in os.listdir(DATA):
+    if file.endswith("png") or file.endswith("jpg"):
+        name = file.split(".")[0]
+        img_path = os.path.join(DATA, file)
+        img = (
+            Image.open(img_path)
+            .convert("RGB")
+            .resize((SIZE, SIZE), Image.ANTIALIAS)
+        )
+        img = pil_to_np(img)
+        imgs.append((img, name))
+        plt.imsave(
+            os.path.join(RESULTS, f"{name}_clean.png"),
+            np.transpose(img, (1, 2, 0)),
+        )
 
 # %%
 
@@ -85,7 +75,7 @@ dip = DIPDeblurring(
     lr=lr,
     sigma_input_noise=sigma_input_noise,
     sigma_reg_noise=sigma_reg_noise,
-    input_depth=input_depth
+    input_depth=input_depth,
 )
 
 # Wavelets
@@ -100,14 +90,14 @@ proxtv = ProxTVDeblurring(lambd=lambd)
 dim_patch = 20
 n_atoms = 50
 cdl = Deconvolution(
-        n_atoms,
-        init_D=None,
-        device=DEVICE,
-        rng=NP_RNG,
-        atom_height=dim_patch,
-        atom_width=dim_patch,
-        lambd=0.1
-    )
+    n_atoms,
+    init_D=None,
+    device=DEVICE,
+    rng=NP_RNG,
+    atom_height=dim_patch,
+    atom_width=dim_patch,
+    lambd=0.1,
+)
 
 models = {
     "tv": proxtv,
@@ -118,16 +108,38 @@ models = {
 
 # %%
 
-for model in models:
-    print(model)
-    result = np.zeros(y.shape)
-    for i in range(3):
-        print(i)
-        models[model].fit(y_conv[i][None, :, :], kernel[None, :, :])
-        result[i] = np.clip(models[model].rec(), 0, 1)
-    plt.imsave(
-        os.path.join(RESULTS, f"{model}.png"),
-        np.transpose(result, (1, 2, 0))
+for img, name in imgs:
+    y = np.array(img)
+    y = torch.tensor(y, device=DEVICE, dtype=torch.float, requires_grad=False)
+    kernel = gaussian_kernel(10, 0.3)
+    kernel = torch.tensor(
+        kernel, device=DEVICE, dtype=torch.float, requires_grad=False
+    )
+    y_conv = F.conv_transpose2d(y[:, None, :, :], kernel[None, None, :, :])
+    y_conv_display = F.conv2d(
+        y[:, None, :, :],
+        torch.flip(kernel[None, None, :, :], dims=[2, 3]),
+        padding="same",
     )
 
-# %%
+    y_conv = y_conv.detach().cpu().numpy().squeeze()
+    y_conv_display = y_conv_display.detach().cpu().numpy().squeeze()
+    kernel = kernel.detach().cpu().numpy().squeeze()
+    y = y.detach().cpu().numpy().squeeze()
+
+    plt.imsave(
+        os.path.join(RESULTS, f"{name}_blurred.png"),
+        np.transpose(y_conv_display, (1, 2, 0)),
+    )
+
+    for model in models:
+        print(model)
+        result = np.zeros(y.shape)
+        for i in range(3):
+            print(i)
+            models[model].fit(y_conv[i][None, :, :], kernel[None, None, :, :])
+            result[i] = np.clip(models[model].rec(), 0, 1)
+        plt.imsave(
+            os.path.join(RESULTS, f"{name}_{model}.png"),
+            np.transpose(result, (1, 2, 0)),
+        )

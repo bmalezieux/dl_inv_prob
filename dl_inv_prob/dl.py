@@ -1,4 +1,5 @@
 import numpy as np
+import proxTV.prox_tv as ptv
 from scipy.signal.windows import tukey
 import time
 import torch
@@ -489,12 +490,9 @@ class Inpainting(DictionaryLearning):
         Computes an upper bound of the Lipschitz constant of the dictionary.
         """
         with torch.no_grad():
-            self.lipschitz = (
-                torch.norm(
-                    torch.matmul(self.D.t(), self.D)
-                )
-                .item()
-            )
+            self.lipschitz = torch.norm(
+                torch.matmul(self.D.t(), self.D)
+            ).item()
             if self.lipschitz == 0:
                 self.lipschitz = 1.0
 
@@ -1042,10 +1040,13 @@ class Deconvolution(ConvolutionalInpainting):
         else:
             dico = self.D * self.window
         rec = self.convt(x, dico)
-        diff = self.convt(
-            rec,
-            self.kernel,
-        ) - y
+        diff = (
+            self.convt(
+                rec,
+                self.kernel,
+            )
+            - y
+        )
         l2 = diff.ravel() @ diff.ravel()
         l1 = torch.sum(torch.abs(x))
         cost = 0.5 * l2 + self.lambd * l1
@@ -1161,6 +1162,370 @@ class Deconvolution(ConvolutionalInpainting):
 
         # Training
         loss = self.training_process()
+        return loss
+
+    def rec(self, Y=None, kernel=None):
+        """
+        Reconstruct the image with the learned atoms and sparse codes.
+
+        Parameters
+        ----------
+        Y : torch.Tensor, shape (batch_size, im_height, im_weight)
+            Data to be reconstructed
+
+        Returns
+        -------
+        rec : torch.Tensor, shape (batch_size, im_height, im_width)
+            Reconstructed image
+        """
+        with torch.no_grad():
+            if Y is None:
+                Y_tensor = self.Y_tensor
+            else:
+                Y_tensor = torch.from_numpy(Y).float().to(self.device)
+
+            if kernel is not None:
+                self.kernel = torch.from_numpy(kernel).float().to(self.device)
+            x = self.forward(Y_tensor)
+            rec = self.convt(x, self.D)
+
+        return rec.detach().to("cpu").numpy()
+
+
+class TVDeconvolution(ConvolutionalInpainting):
+    def __init__(
+        self,
+        n_components,
+        atom_height,
+        atom_width,
+        lambd=0.1,
+        mu=0.1,
+        max_iter=100,
+        init_D=None,
+        step=1.0,
+        algo="fista",
+        alpha=None,
+        keep_dico=False,
+        tol=1e-6,
+        rng=None,
+        device=None,
+    ):
+        super().__init__(
+            n_components=n_components,
+            atom_height=atom_height,
+            atom_width=atom_width,
+            lambd=lambd,
+            max_iter=max_iter,
+            init_D=init_D,
+            step=step,
+            algo=algo,
+            alpha=alpha,
+            keep_dico=keep_dico,
+            tol=tol,
+            rng=rng,
+            device=device,
+        )
+
+        self.kernel = None
+        self.mu = mu
+
+    def compute_lipschitz(self):
+        """
+        Compute the Lipschitz constant of the l2 term gradient wrt the codes.
+        """
+        with torch.no_grad():
+            fourier_D = fft.fftn(self.D, axis=(2, 3))
+            lip_D = (
+                torch.max(
+                    torch.max(
+                        torch.real(fourier_D * torch.conj(fourier_D)), dim=3
+                    )[0],
+                    dim=2,
+                )[0]
+                .sum()
+                .item()
+            )
+            fourier_kernel = fft.fftn(self.kernel, axis=(2, 3))
+            lip_kernel = (
+                torch.max(
+                    torch.max(
+                        torch.real(
+                            fourier_kernel * torch.conj(fourier_kernel)
+                        ),
+                        dim=3,
+                    )[0],
+                    dim=2,
+                )[0]
+                .sum()
+                .item()
+            )
+            self.lipschitz = lip_D * lip_kernel
+
+            if self.lipschitz == 0:
+                self.lipschitz = 1.0
+
+    def compute_lipschitz_D(self, x):
+        """
+        Compute the Lipschitz constant of the l2 term gradient wrt D.
+
+        x : torch.Tensor, shape (batch_size, 1, im_height - atom_height + 1,
+                                                  im_width - atom_width + 1)
+            Sparse codes
+
+        Returns
+        -------
+        lip : float
+            Lipschitz constant
+        """
+        with torch.no_grad():
+            fourier_x = fft.fftn(x, axis=(2, 3))
+            lip_x = (
+                torch.max(
+                    torch.max(
+                        torch.real(fourier_x * torch.conj(fourier_x)), dim=3
+                    )[0],
+                    dim=2,
+                )[0]
+                .sum()
+                .item()
+            )
+            fourier_kernel = fft.fftn(self.kernel, axis=(2, 3))
+            lip_kernel = (
+                torch.max(
+                    torch.max(
+                        torch.real(
+                            fourier_kernel * torch.conj(fourier_kernel)
+                        ),
+                        dim=3,
+                    )[0],
+                    dim=2,
+                )[0]
+                .sum()
+                .item()
+            )
+            self.lipschitz_D = lip_x * lip_kernel
+
+            if self.lipschitz_D == 0:
+                self.lipschit_D = 1.0
+
+    def cost(self, y, x):
+        """
+        Compute the LASSO-like convolutional cost with TV regularized D.
+
+        Parameters
+        ----------
+        y : torch.Tensor, shape (batch_size, im_height, im_width)
+            Input signal
+        x : torch.Tensor,
+            shape (batch_size, n_atoms, im_height - atom_height + 1,
+                                        im_width - atom_width + 1)
+            Sparse codes
+
+        Returns
+        -------
+        cost : float
+            Cost value
+        l2 : float
+            l2 term of the cost
+        """
+        if self.alpha is None:
+            dico = self.D
+        else:
+            dico = self.D * self.window
+        rec = self.convt(x, dico)
+        diff = (
+            self.convt(
+                rec,
+                self.kernel,
+            )
+            - y
+        )
+        l2 = diff.ravel() @ diff.ravel()
+        l1 = torch.sum(torch.abs(x))
+        tv_h = torch.sum(torch.abs(self.D[:, :, :, 1:] - self.D[:, :, :, :-1]))
+        tv_w = torch.sum(torch.abs(self.D[:, :, 1:, :] - self.D[:, :, :-1, :]))
+        tv = tv_h + tv_w
+        cost = 0.5 * l2 + self.lambd * l1 + self.mu * tv
+
+        return cost, l2
+
+    def forward(self, y):
+        """
+        (F)ISTA-like forward pass.
+
+        Parameters
+        ----------
+        y : torch.Tensor, shape (batch_size, im_height, im_weight)
+            Data to be processed by (F)ISTA
+
+        Returns
+        -------
+        out : torch.Tensor, shape (batch_size, 1, im_height - atom_height + 1,
+                                                  im_width - atom_width + 1)
+            Approximation of the sparse code associated to y
+        """
+        batch_size, im_height, im_width = y.shape
+        im_height -= self.kernel.shape[2] - 1
+        im_width -= self.kernel.shape[3] - 1
+        out = torch.zeros(
+            (
+                batch_size,
+                self.n_components,
+                im_height - self.atom_height + 1,
+                im_width - self.atom_width + 1,
+            ),
+            dtype=torch.float,
+            device=self.device,
+        )
+
+        # For FISTA
+        t = 1.0
+        iterate = out.clone()
+
+        # Computing step and product
+        self.compute_lipschitz()
+        step = 1.0 / self.lipschitz
+
+        for i in range(self.max_iter):
+            if self.alpha is None:
+                dico = self.D
+            else:
+                dico = self.D * self.window
+            # Keep last iterate for FISTA
+            iterate_old = iterate.clone()
+
+            # Gradient descent
+            # Conv transpose with padding="same"
+            rec = self.convt(
+                self.convt(out, dico),
+                self.kernel,
+            )
+            diff = self.conv(rec - y, self.kernel)
+            gradient = self.conv(diff, dico)
+            out = out - step * gradient
+
+            # Thresholding
+            thresh = torch.abs(out) - step * self.lambd
+            out = F.relu(thresh)
+
+            iterate = out.clone()
+            # Apply momentum for FISTA
+            if self.algo == "fista":
+                t_new = 0.5 * (1 + np.sqrt(1 + 4 * t * t))
+                out = iterate + ((t - 1.0) / t_new) * (iterate - iterate_old)
+                t = t_new
+
+        return out
+
+    def update_D(self):
+        """
+        Update the dictionary with a proximal gradient step and a rescaling.
+        """
+        with torch.no_grad():
+            self.step = 1.0 / self.lipschitz_D
+            self.D -= self.step * self.D.grad
+            for i, atom in enumerate(self.D):
+                atom_np = atom.detach().cpu().numpy().squeeze()
+                atom_np = ptv.tv1_2d(atom_np, self.mu)
+                atom_torch = torch.from_numpy(atom_np).float().to(self.device)
+                self.D[i] = atom_torch[None, :, :]
+            self.rescale()
+
+    def training_process(self):
+        """
+        Training function, with backtracking line search.
+
+        Returns
+        -------
+        loss : float
+            Final value of the loss after training
+        """
+        self.path_optim = []
+        self.path_loss = []
+        self.path_times = [0]
+        start = time.time()
+
+        # Sparse coding
+        with torch.no_grad():
+            out = self.forward(self.Y_tensor)
+        old_loss, l2 = self.cost(self.Y_tensor, out)
+        old_loss = old_loss.item()
+
+        end = False
+        while not end:
+            # Optimize in D
+            self.compute_lipschitz_D(out)
+            for _ in range(self.max_iter):
+                # Compute loss and gradient
+                loss, l2 = self.cost(self.Y_tensor, out)
+                l2.backward()  # TV not propagated
+
+                # Optimization step (proxTV gradient step + rescaling)
+                self.update_D()
+
+                # Put the gradients to zero
+                self.D.grad.zero_()
+
+            # Sparse coding
+            with torch.no_grad():
+                out = self.forward(self.Y_tensor)
+            loss, l2 = self.cost(self.Y_tensor, out)
+
+            # Checking termination
+            if np.abs(old_loss - loss.item()) / old_loss < self.tol:
+                end = True
+
+            # Keep track of the dictionaries
+            if self.keep_dico:
+                self.path_optim.append(self.D_)
+                self.path_loss.append(loss.item())
+                self.path_times.append(time.time() - start)
+
+            # Update old loss
+            old_loss = loss.item()
+
+        return loss.item()
+
+    def fit(self, Y, kernel):
+        """
+        Training procedure.
+
+        Parameters
+        ----------
+        Y : ndarray, shape (batch_size, im_height, im_weight)
+            Observations to be processed
+        kernel : ndarray, shape (1, 1, kernel_height, kernel_width)
+            Convolutional kernel
+
+        Returns
+        -------
+        loss : float
+            Final value of the loss after training
+        """
+        # Kernel
+        self.kernel = torch.from_numpy(kernel).float().to(self.device)
+
+        # Dictionary
+        if self.init_D is None:
+            if self.rng is None:
+                self.rng = np.random.get_default_rng()
+            dico = self.rng.normal(
+                size=(self.n_components, 1, self.atom_height, self.atom_width)
+            )
+            self.D = nn.Parameter(
+                torch.tensor(dico, device=self.device, dtype=torch.float)
+            )
+        else:
+            dico_tensor = torch.from_numpy(self.init_D).float().to(self.device)
+            self.D = nn.Parameter(dico_tensor)
+        self.rescale()
+
+        # Data
+        self.Y_tensor = torch.from_numpy(Y).float().to(self.device)
+
+        # Training
+        loss = self.training_process()
+
         return loss
 
     def rec(self, Y=None, kernel=None):

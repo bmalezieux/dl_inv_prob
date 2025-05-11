@@ -1,6 +1,4 @@
-import json
 import jsonlines
-import os
 
 from dl_inv_prob.dl import Inpainting
 from dl_inv_prob.utils import (create_patches_overlap, generate_dico,
@@ -49,7 +47,6 @@ with jsonlines.open(JSONL_PATH, mode='a') as writer, \
         for n_exp in tqdm(range(N_EXP), desc=f"Experiments for {dim_image}", leave=False):
             D_init = generate_dico(n_atoms, patch_len, rng=RNG)
             dl = Inpainting(n_atoms, init_D=D_init, device=DEVICE, rng=RNG, max_iter=50)
-            dl = torch.compile(dl)
             dl.fit(y[:, :, None], trivial_masks[:, :, None])
             D_no_inpainting = dl.D_
 
@@ -63,13 +60,11 @@ with jsonlines.open(JSONL_PATH, mode='a') as writer, \
                 y_inpainting, masks = create_patches_overlap(img_inpainting, dim_patch, A)
 
                 dl_inpainting = Inpainting(n_atoms, init_D=D_init, device=DEVICE, rng=RNG)
-                dl_inpainting = torch.compile(dl_inpainting)
                 dl_inpainting.fit(y_inpainting[:, :, None], masks[:, :, None])
                 D_inpainting = dl_inpainting.D_
 
-                Y_tensor = torch.from_numpy(y_inpainting[:, :, None]).float().to(DEVICE)
                 with torch.no_grad():
-                    codes = dl_inpainting.forward(Y_tensor).detach().cpu().numpy()
+                    codes = dl_inpainting(dl_inpainting.Y_tensor).detach().cpu().numpy()
                 weights = np.abs(codes).sum(axis=(0, 2))
 
                 rec_patches = dl_inpainting.rec(y_inpainting[:, :, None])
@@ -80,10 +75,10 @@ with jsonlines.open(JSONL_PATH, mode='a') as writer, \
                     "dim_image": dim_image,
                     "n_exp": n_exp,
                     "s": float(s),
-                    "score": recovery_score(D_inpainting, D_no_inpainting),
-                    "score_weighted": recovery_score(D_inpainting, D_no_inpainting, weights),
-                    "psnr": psnr(rec, img),
-                    "psnr_corrupted": psnr(img_inpainting, img)
+                    "score": float(recovery_score(D_inpainting, D_no_inpainting)),
+                    "score_weighted": float(recovery_score(D_inpainting, D_no_inpainting, weights)),
+                    "psnr": float(psnr(rec, img)),
+                    "psnr_corrupted": float(psnr(img_inpainting, img))
                 }
 
                 writer.write(result)
